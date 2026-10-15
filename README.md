@@ -21,8 +21,7 @@
 **Requirements:** Python 3.10+ and Tkinter (usually bundled with Python on Windows and macOS).
 
 ```bash
-git clone https://github.com/j38-ship-it/Quantumlab.git
-cd QuantumLab
+git clone https://github.com/ITzNomadic/Quantumlab.git
 python -m pip install -r requirements.txt
 python quantumlab.py
 ```
