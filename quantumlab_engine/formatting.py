@@ -244,6 +244,7 @@ def formatear_hamiltoniano(res: HamiltonianResult) -> List[Tuple[str, str]]:
             detalle += f"  Autovalor λ_{idx} = {E_val.real:+.6f}{E_val.imag:+.6f}i   -->   Vector propio = [ {vec_str} ]ᵀ\n"
 
     bloques.append((detalle.strip(), "formula"))
+    bloques.append((f"  Residuo máximo de autoestados ||H|E⟩ - λ|E⟩||: {res.max_residuo_autovector:.2e}", "formula"))
 
     if res.es_hermitica:
         if res.es_degenerado:
@@ -269,11 +270,16 @@ def formatear_hamiltoniano(res: HamiltonianResult) -> List[Tuple[str, str]]:
         psi_0_str = "  ".join([f"{v.real:+.4f}{v.imag:+.4f}i" for v in res.psi_0])
         psi_t_str = "  ".join([f"{v.real:+.4f}{v.imag:+.4f}i" for v in res.psi_t])
         t_str = f"{res.evolucion_t:.4f}" if res.evolucion_t is not None else "0.0000"
+        etiqueta_norma = (
+            "Conservación unitaria de la norma"
+            if res.es_hermitica
+            else "Evolución no unitaria (disipación / decaimiento o ganancia en sistema abierto)"
+        )
         bloques.append((
             f"  Estado inicial normalizado |ψ(0)⟩: [ {psi_0_str} ]ᵀ\n"
             f"  Tiempo transcurrido: t = {t_str}\n"
             f"  Estado evolucionado |ψ(t)⟩:        [ {psi_t_str} ]ᵀ\n"
-            f"  Norma de |ψ(t)⟩: ||ψ(t)|| = {res.norma_psi_t:.6f} (Conservación unitaria)",
+            f"  Norma de |ψ(t)⟩: ||ψ(t)|| = {res.norma_psi_t:.6f} ({etiqueta_norma})",
             "formula"
         ))
 

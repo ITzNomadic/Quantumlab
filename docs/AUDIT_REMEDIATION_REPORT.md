@@ -47,11 +47,27 @@
 
 ---
 
+## Remediación de Auditoría Residual (Post-v0.2.0)
+
+| ID Defecto | Severidad | Descripción del defecto residual | Componente remediado | Prueba de verificación reproducible | Estado |
+|---|---|---|---|---|---|
+| **DEF-01** | P0 | `test_environment_versions_recorded` exigía versión estricta 3.14/fija en CI matriz 3.11/3.12 | `tests/test_audit_baseline.py` | `test_defect_1_environment_version_ci_compatibility`, `test_environment_versions_recorded` | **RESUELTO** |
+| **DEF-02** | P1 | Integral simbólica del pozo infinito excedía soporte físico `[0, L]` discrepando con P numérica | `quantumlab_engine/physics.py` (`analizar_pozo_infinito`) | `test_defect_2_pozo_infinito_symbolic_integral_matches_support` | **RESUELTO** |
+| **DEF-03** | P1 | Matrices casi hermíticas: falta de cálculo de residuo del par propio \|\|Hv - λv\|\| y tolerancia laxa | `quantumlab_engine/physics.py`, `quantumlab_engine/formatting.py` | `test_defect_3_almost_hermitian_residuals_tracked` | **RESUELTO** |
+| **DEF-04** | P1 | Capturas silenciosas de excepciones en vector de estado y tiempo de Hamiltoniano | `quantumlab.py` (`_resolver_hamiltoniano_matricial`) | `test_defect_4_no_silent_exception_swallowing_in_hamiltonian` | **RESUELTO** |
+| **DEF-05** | P1 | `parse_state_vector` mutilaba funciones válidas como `sqrt(2)` por regex codiciosa | `quantumlab_engine/parser.py` (`parse_state_vector`) | `test_defect_5_parse_state_vector_preserves_sqrt` | **RESUELTO** |
+| **DEF-06** | P1 | Dependencia no declarada de SciPy en evolución temporal y enmascaramiento de fallos | `quantumlab_engine/physics.py` (`_expm_numpy`) | `test_defect_6_matrix_exponential_without_scipy` | **RESUELTO** |
+| **DEF-07** | P1 | Desigualdad de Heisenberg dada por cumplida falsamente ante indeterminaciones o contornos abiertos | `quantumlab_engine/physics.py` (`analizar_funcion_onda`) | `test_defect_7_heisenberg_indeterminacy_not_claimed` | **RESUELTO** |
+| **DEF-08** | P2 | Falta de validación de finitud (NaN, Inf) y positividad en parámetros de efecto túnel | `quantumlab_engine/physics.py` (`analizar_efecto_tunel`) | `test_defect_8_tunneling_finite_validation` | **RESUELTO** |
+| **DEF-09** | P2 | Evolución no unitaria de sistemas no hermíticos catalogada erróneamente como conservación unitaria | `quantumlab_engine/formatting.py` (`formatear_hamiltoniano`) | `test_defect_9_non_hermitian_evolution_not_called_unitary` | **RESUELTO** |
+
+---
+
 ## Resultados de la Suite Automatizada de Pruebas
 
 ```
-Ran 62 tests in 2.216s
+Ran 71 tests in 2.925s
 OK
 ```
 
-Todos los tests pasan al 100% sin advertencias ni regresiones en las funcionalidades existentes.
+Todos los tests (62 pruebas de regresión base + 9 pruebas de reproducción de defectos residuales) pasan al 100% sin advertencias ni fallos.

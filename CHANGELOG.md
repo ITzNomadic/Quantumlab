@@ -2,6 +2,19 @@
 
 All notable changes to this project will be recorded here.
 
+## [0.2.1] - 2026-10-15
+
+### Fixed (Residual Audit Remediation)
+- **CI / Matrix Compatibility**: Updated `test_environment_versions_recorded` to validate versions dynamically against `requirements.txt` (`numpy>=1.26,<3`, `sympy>=1.12,<2`) and Python 3.11/3.12 CI matrix instead of pinned local versions.
+- **Infinite Potential Well Physical Support**: Restructured symbolic probability integration over $[0, L]$ physical support so symbolic and numerical probabilities consistently evaluate to 1.0 on $[0, 2L]$.
+- **Almost-Hermitian Matrices & Eigen Residuals**: Implemented strict $\epsilon$ tolerance ($10^{-12}$) for hermiticity verification and explicit computation and reporting of maximum eigenpair residual $\|Hv - \lambda v\|_2$ against the original matrix $H$.
+- **Hamiltonian Exception Handling**: Eliminated silent exception swallowing when parsing initial state vectors and evolution time $t$. Validates physical dimension and finite numeric values, emitting descriptive `ValueError`s.
+- **State Vector Parser**: Fixed regex in `parse_state_vector` to preserve valid functions such as `1/sqrt(2)` without truncating parenthesized function arguments.
+- **SciPy Independence**: Removed undeclared dependency on `scipy.linalg.expm` by implementing a pure NumPy scaling and squaring matrix exponential algorithm (`_expm_numpy`), without masking errors.
+- **Heisenberg Uncertainty Rigor**: Prevented false-positive uncertainty claims when symbolic expressions or open/non-periodic boundaries yield indeterminate or non-self-adjoint states.
+- **Tunneling Boundary & Parameter Validation**: Added finite value checks (`isfinite`) and positivity validation for $E, V_0, a, m$.
+- **Unitary vs Non-Unitary Evolution**: Corrected report formatting for non-Hermitian systems to explicitly state non-unitary dissipation/gain instead of claiming unitary conservation.
+
 ## [0.2.0] - 2026-10-15
 
 ### Security & Architecture

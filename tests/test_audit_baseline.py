@@ -33,10 +33,23 @@ class QuantumLabAuditVerificationTests(unittest.TestCase):
         self.app.limpiar_hoja()
 
     def test_environment_versions_recorded(self):
-        """Verifies environment library versions are captured."""
-        self.assertTrue(PYTHON_VERSION.startswith("3.14"))
-        self.assertEqual(SYMPY_VERSION, "1.14.0")
-        self.assertEqual(NUMPY_VERSION, "2.5.4")
+        """Verifies environment library versions are captured and satisfy CI matrix and requirements."""
+        self.assertGreaterEqual(sys.version_info[:2], (3, 11))
+
+        # Check NumPy version satisfies numpy>=1.26,<3
+        np_parts = [int(p) for p in NUMPY_VERSION.split(".")[:2]]
+        self.assertTrue(
+            (np_parts[0] == 1 and np_parts[1] >= 26) or (np_parts[0] == 2),
+            f"NumPy version {NUMPY_VERSION} incompatible with requirement 'numpy>=1.26,<3'",
+        )
+
+        # Check SymPy version satisfies sympy>=1.12,<2
+        sp_clean = SYMPY_VERSION.split("rc")[0].split("b")[0].split("a")[0].split("+")[0]
+        sp_parts = [int(p) for p in sp_clean.split(".")[:2]]
+        self.assertTrue(
+            sp_parts[0] == 1 and sp_parts[1] >= 12,
+            f"SymPy version {SYMPY_VERSION} incompatible with requirement 'sympy>=1.12,<2'",
+        )
 
     def test_t01_heisenberg_boundary_warning_on_zero_delta_p(self):
         """T01 [QL-002]: Constant wave on [0,1] gives delta_p=0; must NOT claim Heisenberg fulfilled."""

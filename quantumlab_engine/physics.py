@@ -106,6 +106,7 @@ class HamiltonianResult:
     autovectores: np.ndarray
     brecha: Optional[float]
     es_degenerado: bool
+    max_residuo_autovector: float = 0.0
     evolucion_t: Optional[float] = None
     psi_0: Optional[np.ndarray] = None
     psi_t: Optional[np.ndarray] = None
@@ -197,15 +198,24 @@ def analizar_funcion_onda(psi_raw: sp.Expr, a: sp.Expr, b: sp.Expr) -> WaveFunct
         # Check inequality delta_x * delta_p >= hbar/2
         diferencia = sp.simplify(delta_x_delta_p - hbar / 2)
         try:
-            if diferencia.is_nonnegative or (diferencia.is_number and float(diferencia.evalf()) >= -1e-12):
+            if diferencia.is_nonnegative is True or (diferencia.is_number and float(diferencia.evalf()) >= -1e-12):
                 heisenberg_cumple = True
                 heisenberg_nota = "El estado satisface rigurosamente el Principio de Incertidumbre de Heisenberg: Δx·Δp ≥ ℏ/2."
-            else:
+            elif diferencia.is_negative is True or (diferencia.is_number and float(diferencia.evalf()) < -1e-12):
                 heisenberg_cumple = False
                 heisenberg_nota = "El producto de incertidumbres formal viola la cota ℏ/2 debido a las condiciones de frontera o dominio."
+            else:
+                heisenberg_cumple = False
+                heisenberg_nota = (
+                    "INDETERMINADO: No se pudo demostrar formalmente la desigualdad canónica Δx·Δp ≥ ℏ/2 "
+                    "con las hipótesis simbólicas actuales."
+                )
         except Exception:
-            heisenberg_cumple = True
-            heisenberg_nota = "Δx·Δp es simbólicamente consistente con la cota fundamental."
+            heisenberg_cumple = False
+            heisenberg_nota = (
+                "INDETERMINADO: No se pudo evaluar formalmente la desigualdad canónica Δx·Δp ≥ ℏ/2 "
+                "para este estado."
+            )
 
     return WaveFunctionResult(
         psi_raw=psi_raw, a=a, b=b,
@@ -335,9 +345,14 @@ def analizar_pozo_infinito(a: sp.Expr, b: sp.Expr, n_val: int = 1, L_val: sp.Exp
     psi_n = sp.sqrt(2 / L) * sp.sin(n_val * sp.pi * x / L)
     energia_n = (n_val**2 * sp.pi**2 * hbar**2) / (2 * m * L**2)
 
-    # Effective symbolic limits
-    # If a and b are numeric or simple fractions of L
-    prob_simbolica = sp.integrate(psi_n**2, (x, a, b))
+    # Physical wave function density is strictly zero outside [0, L]
+    densidad_caja = sp.Piecewise(
+        (psi_n**2, sp.And(x >= 0, x <= L)),
+        (0, True)
+    )
+
+    # Symbolic integral over [a, b] respecting physical domain [0, L]
+    prob_simbolica = sp.integrate(densidad_caja, (x, a, b))
 
     # Calculate exact clamped numerical probability
     try:
@@ -416,12 +431,19 @@ def analizar_oscilador_armonico(n_val: int = 0) -> HarmonicOscillatorResult:
 # 5. EFECTO TÚNEL EN BARRERA RECTANGULAR (QL-012, QL-022, QL-031)
 # =====================================================================
 def analizar_efecto_tunel(E_ev: float = 3.2, V0_ev: float = 5.0, ancho_nm: float = 0.5, masa_kg: float = M_ELECTRON_SI) -> TunnelingResult:
+    # Validate finite real values
+    for val, name in [(E_ev, "Energía E"), (V0_ev, "Altura de barrera V0"), (ancho_nm, "Espesor a"), (masa_kg, "Masa m")]:
+        if not isinstance(val, (int, float)) or not np.isfinite(val):
+            raise ValueError(f"El parámetro '{name}' debe ser un valor numérico real finito.")
+
     if E_ev < 0:
         raise ValueError(f"La energía de la partícula E={E_ev} eV no puede ser negativa.")
     if V0_ev <= 0:
         raise ValueError(f"La altura de la barrera V0={V0_ev} eV debe ser estrictamente positiva.")
     if ancho_nm < 0:
         raise ValueError(f"El ancho de la barrera a={ancho_nm} nm no puede ser negativo.")
+    if masa_kg <= 0:
+        raise ValueError(f"La masa de la partícula m={masa_kg} kg debe ser estrictamente positiva.")
 
     ancho_m = ancho_nm * NM_TO_M
 
@@ -509,6 +531,35 @@ def analizar_efecto_tunel(E_ev: float = 3.2, V0_ev: float = 5.0, ancho_nm: float
     )
 
 
+def _expm_numpy(A: np.ndarray) -> np.ndarray:
+    """
+    Computes matrix exponential exp(A) in pure NumPy using scaling and squaring with Taylor expansion.
+    Completely eliminates dependency on SciPy.
+    """
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        raise ValueError("La matriz debe ser cuadrada para calcular la exponencial matricial.")
+
+    norm_inf = float(np.max(np.sum(np.abs(A), axis=1)))
+    if norm_inf == 0.0:
+        return np.eye(A.shape[0], dtype=complex)
+
+    s = max(0, int(np.ceil(np.log2(norm_inf / 0.5)))) if norm_inf > 0.5 else 0
+    B = A / (2.0 ** s)
+
+    p = 18
+    n = A.shape[0]
+    X = np.eye(n, dtype=complex)
+    term = np.eye(n, dtype=complex)
+    for k in range(1, p + 1):
+        term = (term @ B) / k
+        X = X + term
+
+    for _ in range(s):
+        X = X @ X
+
+    return X
+
+
 # =====================================================================
 # 6. HAMILTONIANO MATRICIAL Y EVOLUCIÓN TEMPORAL (QL-003, QL-013, QL-014, QL-015, QL-023, QL-032)
 # =====================================================================
@@ -525,16 +576,24 @@ def analizar_hamiltoniano_matricial(
     # QL-013: Measure exact residual ||H - H†||_inf
     H_dagger = H.conj().T
     residual_hermitico = float(np.max(np.abs(H - H_dagger)))
-    es_hermitica = (residual_hermitico < 1e-10)
+    es_hermitica = (residual_hermitico <= 1e-12)
 
     if es_hermitica:
-        # Hermitian: strictly real eigenvalues
-        energias, autovectores = np.linalg.eigh(H)
+        # Strictly Hermitian (or within floating-point tolerance 1e-12)
+        H_calc = 0.5 * (H + H_dagger) if residual_hermitico > 0 else H
+        energias, autovectores = np.linalg.eigh(H_calc)
 
         # Sort ascending
         sort_idx = np.argsort(energias)
         energias = energias[sort_idx]
         autovectores = autovectores[:, sort_idx]
+
+        # Calculate eigenvector residuals ||H v_j - lambda_j v_j|| against ORIGINAL H
+        residuos = [
+            float(np.linalg.norm(H @ autovectores[:, j] - energias[j] * autovectores[:, j]))
+            for j in range(len(energias))
+        ]
+        max_residuo_autovector = float(np.max(residuos)) if residuos else 0.0
 
         # QL-014: Gap to first DISTINCT eigenvalue
         e0 = energias[0]
@@ -559,6 +618,12 @@ def analizar_hamiltoniano_matricial(
         autovectores = autovectores[:, sort_idx]
         brecha = None
         es_degenerado = False
+
+        residuos = [
+            float(np.linalg.norm(H @ autovectores[:, j] - energias[j] * autovectores[:, j]))
+            for j in range(len(energias))
+        ]
+        max_residuo_autovector = float(np.max(residuos)) if residuos else 0.0
 
     # QL-015: Time evolution |psi(t)> = exp(-i H t / hbar) |psi(0)>
     psi_t = None
@@ -587,15 +652,10 @@ def analizar_hamiltoniano_matricial(
             psi_t = autovectores @ c_t
             norma_psi_t = float(np.linalg.norm(psi_t))
         else:
-            # Matrix exponential for general matrix
-            from scipy.linalg import expm
-            try:
-                U = expm(-1j * H * t)
-                psi_t = U @ psi_0_norm
-                norma_psi_t = float(np.linalg.norm(psi_t))
-            except Exception:
-                psi_t = psi_0_norm
-                norma_psi_t = 1.0
+            # Matrix exponential in pure NumPy
+            U = _expm_numpy(-1j * H * t)
+            psi_t = U @ psi_0_norm
+            norma_psi_t = float(np.linalg.norm(psi_t))
 
     return HamiltonianResult(
         H=H,
@@ -605,6 +665,7 @@ def analizar_hamiltoniano_matricial(
         autovectores=autovectores,
         brecha=brecha,
         es_degenerado=es_degenerado,
+        max_residuo_autovector=max_residuo_autovector,
         evolucion_t=t_val,
         psi_0=psi_0,
         psi_t=psi_t,

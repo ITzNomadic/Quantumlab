@@ -779,20 +779,28 @@ class CalculadoraCuanticaAvanzada:
         # Parse initial state vector if provided
         raw_psi = self.entry_psi.get().strip()
         psi_0 = None
-        try:
-            psi_0 = parse_state_vector(raw_psi, expected_dim=H.shape[0])
-        except Exception:
-            psi_0 = None
+        preset_psi = self.PRESETS[5]["psi"].strip()
+        if raw_psi:
+            # If user left the 2-level preset untouched with an N!=2 matrix, treat as no state vector provided
+            if raw_psi == preset_psi and H.shape[0] != 2:
+                psi_0 = None
+            else:
+                try:
+                    psi_0 = parse_state_vector(raw_psi, expected_dim=H.shape[0])
+                except Exception as e:
+                    raise ValueError(f"Vector de estado inicial inválido: {e}")
 
         # Parse time t if given in lim_a
         t_val = 0.0
-        try:
-            t_str = self.entry_lim_a.get().strip()
-            if t_str:
+        t_str = self.entry_lim_a.get().strip()
+        if t_str:
+            try:
                 t_sym = self._parsear_expresion(t_str)
                 t_val = float(t_sym.evalf())
-        except Exception:
-            t_val = 0.0
+                if not np.isfinite(t_val):
+                    raise ValueError("El tiempo 't' debe ser un número real finito.")
+            except Exception as e:
+                raise ValueError(f"Valor de tiempo 't' inválido en Límite a: {e}")
 
         res = analizar_hamiltoniano_matricial(H, psi_0=psi_0, t_val=t_val)
         bloques = formatear_hamiltoniano(res)

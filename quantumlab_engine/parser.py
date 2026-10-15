@@ -321,36 +321,34 @@ def parse_matrix(raw_text: str, max_dim: int = 16) -> np.ndarray:
 
 def parse_state_vector(raw_text: str, expected_dim: int = None) -> np.ndarray:
     """
-    Parses a state vector such as '[1, 0]' or '1, 0' or '1/sqrt(2), 1/sqrt(2)'.
-    Normalizes or returns unit vector if valid.
+    Parses a state vector such as '[1, 0]' or '1, 0' or '[1/sqrt(2), 1/sqrt(2)]'.
+    Preserves math function calls like sqrt(2) while removing descriptive comments.
     """
     clean = raw_text.strip()
-    # Strip any comments or trailing annotations like '(Estado inicial)' first
-    clean = re.sub(r"\(.*?\)", "", clean).strip()
+    if not clean:
+        raise ValueError("El vector de estado inicial está vacío.")
 
-    # Strip enclosing brackets/parentheses
-    if clean.startswith("[") and clean.endswith("]"):
-        clean = clean[1:-1].strip()
-    elif clean.startswith("(") and clean.endswith(")"):
-        clean = clean[1:-1].strip()
+    # If enclosed in brackets [ ... ], extract strictly the bracket content
+    bracket_match = re.search(r"\[(.*)\]", clean)
+    if bracket_match:
+        clean = bracket_match.group(1).strip()
+    else:
+        # Strip only trailing parenthesized descriptions like '(Estado inicial |ψ(0)⟩)'
+        clean = re.sub(r"\s*\([^()]*[a-zA-Z\s|ψ⟩]{3,}[^()]*\)\s*$", "", clean).strip()
 
-    # Split by comma or space
+    # Split by comma or semicolon
     tokens = [t.strip() for t in re.split(r"[,;]+", clean) if t.strip()]
     if not tokens:
         raise ValueError("El vector de estado inicial está vacío.")
 
     values = []
     for token in tokens:
-        # Strip trailing labels, e.g. "(Estado inicial)"
-        token_clean = re.sub(r"\(.*?\)", "", token).strip()
-        if not token_clean:
-            continue
-        norm_val = token_clean.replace("i", "j")
+        norm_val = token.replace("i", "j")
         try:
             val = complex(norm_val)
         except ValueError:
             try:
-                sym_val = SafeASTParser.parse(token_clean)
+                sym_val = SafeASTParser.parse(token)
                 val = complex(sym_val.evalf())
             except Exception as e:
                 raise ValueError(f"Componente vectorial no válida: '{token}'") from e
