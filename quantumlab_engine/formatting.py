@@ -2,12 +2,14 @@
 Decoupled formatting engine for QuantumLab.
 Produces structured, human-readable step-by-step educational explanations
 with tagged output blocks ('titulo', 'paso', 'explicacion', 'formula', 'conclusion', 'advertencia').
+Fully localized in English and Spanish via quantumlab_i18n.
 """
 
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import sympy as sp
 import numpy as np
 
+from quantumlab_i18n import t
 from .physics import (
     WaveFunctionResult,
     Schrodinger1DResult,
@@ -15,273 +17,297 @@ from .physics import (
     HarmonicOscillatorResult,
     TunnelingResult,
     HamiltonianResult,
+    HBAR_SI,
 )
+from .parser import SafeASTParser
 
 
-def formatear_analisis_onda(res: WaveFunctionResult) -> List[Tuple[str, str]]:
+def formatear_analisis_onda(res: WaveFunctionResult, lang: Optional[str] = None) -> List[Tuple[str, str]]:
     bloques = [
-        ("📘 ANÁLISIS CUÁNTICO COMPLETO DE LA FUNCIÓN DE ONDA ψ(x)", "titulo"),
-        (
-            "Vamos a analizar paso a paso el estado cuántico propuesto. Primero verificaremos la condición "
-            "de normalización de Born, analizaremos las condiciones de contorno y extraeremos los observables "
-            "físicos mediante operadores cuánticos autoadjuntos.",
-            "explicacion"
-        ),
-        (f"  ψ_inicial(x) = {sp.pretty(res.psi_raw)}   en el dominio [{res.a}, {res.b}]", "formula"),
+        (t("wave.title", lang=lang), "titulo"),
+        (t("wave.intro", lang=lang), "explicacion"),
+        (t("wave.initial_state", lang=lang, psi=sp.pretty(res.psi_raw), a=res.a, b=res.b), "formula"),
 
-        ("🔹 PASO 1: Condición de Normalización de Born y Cuadrado Integrable", "paso"),
+        (t("wave.step1_title", lang=lang), "paso"),
+        (t("wave.step1_desc", lang=lang), "explicacion"),
         (
-            "En mecánica cuántica, la probabilidad total de encontrar la partícula en el dominio debe ser estrictamente 1 (100%). "
-            "Verificamos que la función sea de cuadrado integrable en el dominio:",
-            "explicacion"
+            t(
+                "wave.step1_formula",
+                lang=lang,
+                norm_integral=res.norm_integral,
+                constante_A=res.constante_A,
+                psi_norm=res.psi_norm,
+            ),
+            "formula",
         ),
         (
-            f"  ∫ |ψ(x)|² dx = {res.norm_integral}\n"
-            f"  Constante de normalización: A = 1 / √({res.norm_integral}) = {res.constante_A}\n"
-            f"  Función de onda normalizada: ψ(x) = {res.psi_norm}",
-            "formula"
-        ),
-        (f"  {res.frontera_nota}", "advertencia" if not res.es_autoadjunto_p else "explicacion"),
-
-        ("🔹 PASO 2: Valor Esperado de la Posición ⟨x⟩ y Dispersión Cuántica Δx", "paso"),
-        (
-            "Calculamos la posición media aplicando el operador posición x̂ en la base de coordenadas:",
-            "explicacion"
-        ),
-        (
-            f"  ⟨x⟩  = ∫ ψ*(x) · x · ψ(x) dx  = {res.exp_x}\n"
-            f"  ⟨x²⟩ = ∫ ψ*(x) · x² · ψ(x) dx = {res.exp_x2}\n"
-            f"  Incertidumbre en posición: Δx = √(⟨x²⟩ - ⟨x⟩²) = {res.delta_x}",
-            "formula"
+            t("wave.boundary_selfadjoint", lang=lang) if res.es_autoadjunto_p else t("wave.boundary_warning", lang=lang),
+            "advertencia" if not res.es_autoadjunto_p else "explicacion",
         ),
 
-        ("🔹 PASO 3: Operador Momento Lineal p̂ = -iℏ(d/dx) y Energía Cinética ⟨T⟩", "paso"),
+        (t("wave.step2_title", lang=lang), "paso"),
+        (t("wave.step2_desc", lang=lang), "explicacion"),
         (
-            "Derivamos analíticamente la función de onda para aplicar el operador de momento y el Laplaciano unidimensional:",
-            "explicacion"
-        ),
-        (
-            f"  dψ/dx   = {res.d_psi}\n"
-            f"  d²ψ/dx² = {res.d2_psi}\n"
-            f"  ⟨p⟩  = ∫ ψ*(x) · (-iℏ·d/dx) · ψ(x) dx = {res.exp_p}\n"
-            f"  ⟨p²⟩ = ∫ ψ*(x) · (-ℏ²·d²/dx²) · ψ(x) dx = {res.exp_p2}\n"
-            f"  Incertidumbre en momento: Δp = √(⟨p²⟩ - ⟨p⟩²) = {res.delta_p}\n"
-            f"  Energía Cinética media: ⟨T⟩ = ⟨p²⟩ / (2m) = {res.exp_T}",
-            "formula"
+            t("wave.step2_formula", lang=lang, exp_x=res.exp_x, exp_x2=res.exp_x2, delta_x=res.delta_x),
+            "formula",
         ),
 
-        ("🔹 PASO 4: Principio de Incertidumbre de Heisenberg y Validación de Dominio", "paso"),
+        (t("wave.step3_title", lang=lang), "paso"),
+        (t("wave.step3_desc", lang=lang), "explicacion"),
         (
-            f"  Producto de incertidumbres: Δx · Δp = {res.delta_x_delta_p}\n"
-            f"  Cota fundamental canónica:  ℏ/2",
-            "formula"
+            t(
+                "wave.step3_formula",
+                lang=lang,
+                d_psi=res.d_psi,
+                d2_psi=res.d2_psi,
+                exp_p=res.exp_p,
+                exp_p2=res.exp_p2,
+                delta_p=res.delta_p,
+                exp_T=res.exp_T,
+            ),
+            "formula",
         ),
-        (
-            f"💡 INTERPRETACIÓN CIENTÍFICA: Posición media ⟨x⟩ = {res.exp_x}, momento promedio ⟨p⟩ = {res.exp_p}.\n"
-            f"{res.heisenberg_nota}",
-            "conclusion" if res.heisenberg_cumple else "advertencia"
-        ),
+
+        (t("wave.step4_title", lang=lang), "paso"),
+        (t("wave.step4_formula", lang=lang, product=res.delta_x_delta_p), "formula"),
     ]
+
+    heis_code = getattr(res, "heisenberg_codigo", "fulfilled" if res.heisenberg_cumple else "indeterminate")
+    heis_msg = t(f"wave.heisenberg_{heis_code}", lang=lang)
+    prefix = t("wave.interpretation_prefix", lang=lang, exp_x=res.exp_x, exp_p=res.exp_p)
+    bloques.append((prefix + heis_msg, "conclusion" if res.heisenberg_cumple else "advertencia"))
     return bloques
 
 
-def formatear_schrodinger(res: Schrodinger1DResult) -> List[Tuple[str, str]]:
+def formatear_schrodinger(res: Schrodinger1DResult, lang: Optional[str] = None) -> List[Tuple[str, str]]:
     bloques = [
-        ("📗 ECUACIÓN DE SCHRÖDINGER INDEPENDIENTE DEL TIEMPO (1D)", "titulo"),
-        (
-            "Evaluamos la acción del operador Hamiltoniano Ĥ = T̂ + V̂ sobre ψ(x) para verificar "
-            "si se trata de un estado estacionario (autoestado) y determinar analíticamente su energía.",
-            "explicacion"
-        ),
-        ("  Ecuación maestra:  [- (ℏ² / 2m) · d²/dx² + V(x)] ψ(x) = E · ψ(x)", "formula"),
+        (t("schrodinger.title", lang=lang), "titulo"),
+        (t("schrodinger.intro", lang=lang), "explicacion"),
+        (t("schrodinger.system_inputs", lang=lang, psi=res.psi, V=res.V), "formula"),
 
-        ("🔹 PASO 1: Derivada espacial de segundo orden", "paso"),
-        (f"  ψ(x) = {res.psi}\n  d²ψ/dx² = {res.d2_psi}", "formula"),
-
-        ("🔹 PASO 2: Acción del Operador Hamiltoniano Ĥ sobre el estado", "paso"),
+        (t("schrodinger.step1_title", lang=lang), "paso"),
         (
-            f"  T̂ψ(x) = - (ℏ²/2m) · d²ψ/dx² = {res.termino_cinetico}\n"
-            f"  V̂ψ(x) = V(x) · ψ(x) = {res.termino_potencial}\n"
-            f"  Ĥψ(x) = T̂ψ + V̂ψ = {res.H_psi}",
-            "formula"
+            t("schrodinger.step1_formula", lang=lang, d_psi=sp.diff(res.psi, SafeASTParser.x), d2_psi=res.d2_psi),
+            "formula",
         ),
 
-        ("🔹 PASO 3: Análisis del Cociente de Energía E(x) = (Ĥψ) / ψ", "paso"),
-        (f"  Cociente: E(x) = {res.energia}", "formula"),
-        (f"💡 INTERPRETACIÓN FÍSICA: {res.mensaje_interpretacion}", "conclusion" if res.es_autoestado_formal else "advertencia"),
+        (t("schrodinger.step2_title", lang=lang), "paso"),
+        (
+            t(
+                "schrodinger.step2_formula",
+                lang=lang,
+                T_psi=res.termino_cinetico,
+                V_psi=res.termino_potencial,
+                H_psi=res.H_psi,
+            ),
+            "formula",
+        ),
+
+        (t("schrodinger.step3_title", lang=lang), "paso"),
+        (t("schrodinger.step3_formula", lang=lang, energia=res.energia), "formula"),
     ]
+
+    if res.es_autoestado_formal:
+        if res.es_estado_fisico_ligado:
+            concl = t("schrodinger.conclusion_eigenstate_bound", lang=lang, energia=res.energia)
+            tag = "conclusion"
+        else:
+            concl = t("schrodinger.conclusion_eigenstate_formal", lang=lang, energia=res.energia)
+            tag = "advertencia"
+    else:
+        concl = t("schrodinger.conclusion_non_eigenstate", lang=lang, energia=res.energia)
+        tag = "advertencia"
+
+    bloques.append((concl, tag))
     return bloques
 
 
-def formatear_pozo_infinito(res: InfiniteWellResult) -> List[Tuple[str, str]]:
+def formatear_pozo_infinito(res: InfiniteWellResult, lang: Optional[str] = None) -> List[Tuple[str, str]]:
     bloques = [
-        ("📙 PARTÍCULA EN UNA CAJA CUÁNTICA 1D (POZO DE POTENCIAL INFINITO)", "titulo"),
-        (
-            f"Una partícula de masa m confinada entre paredes impenetrables en [0, L] "
-            f"se encuentra en el estado cuantizado con número cuántico n = {res.n}.",
-            "explicacion"
-        ),
+        (t("well.title", lang=lang), "titulo"),
+        (t("well.intro", lang=lang), "explicacion"),
 
-        ("🔹 PASO 1: Autofunción Cuantizada y Nivel de Energía Eₙ", "paso"),
-        (
-            f"  ψₙ(x) = √(2/L) · sin({res.n}·π·x / L)   para 0 ≤ x ≤ L (cero en el exterior)\n"
-            f"  E_{res.n}    = ({res.n}² · π² · ℏ²) / (2 · m · L²)",
-            "formula"
-        ),
+        (t("well.step1_title", lang=lang), "paso"),
+        (t("well.step1_formula", lang=lang, n=res.n, L=res.L), "formula"),
 
-        ("🔹 PASO 2: Probabilidad de Localización en la Región", "paso"),
+        (t("well.step2_title", lang=lang, a=res.a_in, b=res.b_in, n=res.n), "paso"),
         (
-            f"  Región solicitada: [{res.a_in}, {res.b_in}]\n"
-            f"  Integral simbólica: P = ∫ |ψₙ(x)|² dx = {res.prob_simbolica}\n"
-            f"  Probabilidad calculada: P = {res.prob_numerica:.6f} ({res.prob_numerica * 100:.2f}%)",
-            "formula"
+            t(
+                "well.step2_formula",
+                lang=lang,
+                a_in=res.a_in,
+                b_in=res.b_in,
+                a_eff=res.a_eff,
+                b_eff=res.b_eff,
+                prob_simbolica=res.prob_simbolica,
+                prob_num=res.prob_numerica,
+                prob_percent=res.prob_numerica * 100.0,
+            ),
+            "formula",
         ),
     ]
+
     if res.nota_dominio:
-        bloques.append((f"⚠️ {res.nota_dominio}", "advertencia"))
+        bloques.append((t("well.domain_note", lang=lang, a=res.a_in, b=res.b_in, L=res.L), "advertencia"))
 
     bloques.append((
-        f"💡 INTERPRETACIÓN FÍSICA: Para el nivel n = {res.n}, la interferencia cuántica modula la probabilidad de detección. "
-        f"La probabilidad en la región solicitada es del {res.prob_numerica * 100:.2f}% "
-        f"(frente a una distribución uniforme clásica).",
-        "conclusion"
+        t("well.interpretation", lang=lang, n=res.n, prob_percent=res.prob_numerica * 100.0),
+        "conclusion",
     ))
     return bloques
 
 
-def formatear_oscilador(res: HarmonicOscillatorResult) -> List[Tuple[str, str]]:
+def formatear_oscilador(res: HarmonicOscillatorResult, lang: Optional[str] = None) -> List[Tuple[str, str]]:
     bloques = [
-        (f"📕 OSCILADOR ARMÓNICO CUÁNTICO (NIVEL n = {res.n})", "titulo"),
-        (
-            "El oscilador armónico cuántico describe sistemas en potenciales parabólicos V(x) = ½ m ω² x². "
-            "Sus soluciones analíticas son polinomios de Hermite modulados por una gaussiana.",
-            "explicacion"
-        ),
+        (t("oscillator.title", lang=lang, n=res.n), "titulo"),
+        (t("oscillator.intro", lang=lang), "explicacion"),
 
-        (f"🔹 PASO 1: Autofunción Normalizada ψ_{res.n}(x)", "paso"),
-        (
-            f"  Factor de normalización A_{res.n} = {res.An}\n"
-            f"  ψ_{res.n}(x) = {res.psi_n}",
-            "formula"
-        ),
+        (t("oscillator.step1_title", lang=lang), "paso"),
+        (t("oscillator.step1_formula", lang=lang, n=res.n, An=res.An, psi_n=res.psi_n), "formula"),
 
-        ("🔹 PASO 2: Verificación con el Hamiltoniano Ĥ = - (ℏ²/2m) d²/dx² + ½ m ω² x²", "paso"),
+        (t("oscillator.step2_title", lang=lang), "paso"),
         (
-            f"  d²ψ_{res.n}/dx² = {res.d2_psi}\n"
-            f"  Ĥψ_{res.n}(x)  = {res.H_psi}\n"
-            f"  Energía propia del nivel: E_{res.n} = {res.energia_n}   (Eₙ = ℏω(n + ½))",
-            "formula"
-        ),
-        (
-            f"💡 INTERPRETACIÓN FÍSICA: Para n = {res.n}, el sistema posee una energía cuantizada de E_{res.n} = {res.energia_n}. "
-            + ("En el estado fundamental (n=0), la energía de punto cero E₀ = ½ℏω es una consecuencia ineludible del Principio de Incertidumbre."
-               if res.n == 0 else
-               f"El estado excitado n = {res.n} posee {res.n} nodos espaciales y una energía superior en {res.n}ℏω respecto al estado base."),
-            "conclusion"
+            t(
+                "oscillator.step2_formula",
+                lang=lang,
+                d2_psi=res.d2_psi,
+                H_psi=res.H_psi,
+                n=res.n,
+                energia_n=res.energia_n,
+            ),
+            "formula",
         ),
     ]
+
+    if res.n == 0:
+        concl = t("oscillator.interpretation_ground", lang=lang)
+    else:
+        concl = t("oscillator.interpretation_excited", lang=lang, n=res.n, coeff=f"{res.n} + 1/2")
+
+    bloques.append((concl, "conclusion"))
     return bloques
 
 
-def formatear_tunel(res: TunnelingResult) -> List[Tuple[str, str]]:
+def formatear_tunel(res: TunnelingResult, lang: Optional[str] = None) -> List[Tuple[str, str]]:
     bloques = [
-        ("🔮 EFECTO TÚNEL CUÁNTICO A TRAVÉS DE BARRERA RECTANGULAR", "titulo"),
+        (t("tunnel.title", lang=lang), "titulo"),
         (
-            f"Analizamos el paso cuántico de una partícula de masa m = {res.masa_kg:.4e} kg "
-            f"con energía incidente E = {res.E_ev:.4f} eV ante una barrera de V₀ = {res.V0_ev:.4f} eV "
-            f"y espesor a = {res.ancho_nm:.4f} nm.\n"
-            f"Régimen físico: {res.regimen}",
-            "explicacion"
+            t("tunnel.intro", lang=lang, m=res.masa_kg, E_ev=res.E_ev, V0_ev=res.V0_ev, ancho_nm=res.ancho_nm),
+            "explicacion",
         ),
-
-        ("🔹 PASO 1: Atenuación / Vector de Onda Cuántico dentro de la Barrera", "paso"),
-        (
-            f"  κ (o k') = {res.kappa_m_inv:.4e} m⁻¹\n"
-            f"  Factor adimensional κ·a = {res.kappa_a:.4f}",
-            "formula"
-        ),
-
-        ("🔹 PASO 2: Coeficientes de Transmisión (T) y Reflexión (R)", "paso"),
-        (
-            f"  Probabilidad de Transmisión (T) : T = {res.T:.6e}  ({res.T * 100:.4f}%)\n"
-            f"  Probabilidad de Reflexión (R)   : R = {res.R:.6e}  ({res.R * 100:.4f}%)\n"
-            f"  Conservación de flujo cuántico  : T + R = {res.T + res.R:.6f} ≈ 1.0",
-            "formula"
-        ),
-
-        (f"💡 INTERPRETACIÓN FÍSICA: {res.explicacion_fisica}", "conclusion"),
+        (t("tunnel.step1_title", lang=lang), "paso"),
     ]
+
+    if res.ancho_nm == 0.0:
+        step1_txt = t("tunnel.regime_zero_width", lang=lang)
+        interp_txt = t("tunnel.regime_zero_width", lang=lang)
+    elif res.E_ev == 0.0:
+        step1_txt = t("tunnel.regime_zero_energy", lang=lang)
+        interp_txt = t("tunnel.regime_zero_energy", lang=lang)
+    elif res.E_ev < res.V0_ev:
+        step1_txt = t("tunnel.step1_subbarrier", lang=lang, kappa=res.kappa_m_inv, kappa_a=res.kappa_a)
+        interp_txt = t("tunnel.regime_subbarrier_explanation", lang=lang, T_percent=res.T * 100.0)
+    elif np.isclose(res.E_ev, res.V0_ev, atol=1e-9):
+        step1_txt = t("tunnel.step1_resonance", lang=lang)
+        interp_txt = t("tunnel.regime_resonance_explanation", lang=lang)
+    else:
+        step1_txt = t("tunnel.step1_overbarrier", lang=lang, kappa=res.kappa_m_inv, kappa_a=res.kappa_a)
+        interp_txt = t("tunnel.regime_overbarrier_explanation", lang=lang, T_percent=res.T * 100.0, R_percent=res.R * 100.0)
+
+    bloques.append((step1_txt, "formula"))
+
+    bloques.append((t("tunnel.step2_title", lang=lang), "paso"))
+    bloques.append((
+        t(
+            "tunnel.step2_formula",
+            lang=lang,
+            T=res.T,
+            T_percent=res.T * 100.0,
+            R=res.R,
+            R_percent=res.R * 100.0,
+            TR_sum=res.T + res.R,
+        ),
+        "formula",
+    ))
+    bloques.append((interp_txt, "conclusion"))
     return bloques
 
 
-def formatear_hamiltoniano(res: HamiltonianResult) -> List[Tuple[str, str]]:
+def formatear_hamiltoniano(res: HamiltonianResult, lang: Optional[str] = None) -> List[Tuple[str, str]]:
     bloques = [
-        ("📘 DIAGONALIZACIÓN DE HAMILTONIANO MATRICIAL Y EVOLUCIÓN TEMPORAL", "titulo"),
-        (
-            "Calculamos el espectro completo del operador Hamiltoniano matricial Ĥ, verificando la condición "
-            "de Hermiticidad, calculando sus autovalores y autovectores, la brecha de excitación y la evolución temporal.",
-            "explicacion"
-        ),
-        (f"  Matriz Hamiltoniana H:\n{res.H}", "formula"),
+        (t("hamiltonian.title", lang=lang), "titulo"),
+        (t("hamiltonian.intro", lang=lang), "explicacion"),
+        (t("hamiltonian.matrix_repr", lang=lang, matrix=res.H), "formula"),
 
-        ("🔹 PASO 1: Verificación de Hermiticidad (H = H†)", "paso"),
-        (
-            f"  Residual de Hermiticidad: ||H - H†||_max = {res.residual_hermitico:.2e}\n"
-            f"  ¿Es Hermítica?: {'SÍ (Sistema cerrado con autovalores 100% reales)' if res.es_hermitica else 'NO (Matriz no autoadjunta; modelo de sistema abierto / disipativo)'}",
-            "formula" if res.es_hermitica else "advertencia"
-        ),
-
-        ("🔹 PASO 2: Niveles de Energía (Autovalores) y Autoestados (|Eₙ⟩)", "paso"),
+        (t("hamiltonian.step1_title", lang=lang), "paso"),
     ]
+
+    h_step1 = (
+        t("hamiltonian.residual_line", lang=lang, res=res.residual_hermitico) + "\n" +
+        (t("hamiltonian.hermitian_yes", lang=lang) if res.es_hermitica else t("hamiltonian.hermitian_no", lang=lang))
+    )
+    bloques.append((h_step1, "formula" if res.es_hermitica else "advertencia"))
+
+    bloques.append((t("hamiltonian.step2_title", lang=lang), "paso"))
 
     detalle = ""
     for idx, E_val in enumerate(res.energias):
         vec = res.autovectores[:, idx]
         vec_str = "  ".join([f"{v.real:+.4f}{v.imag:+.4f}i" for v in vec])
         if res.es_hermitica:
-            detalle += f"  Nivel E_{idx} = {E_val.real:+.6f}   -->   Autoestado |E_{idx}⟩ = [ {vec_str} ]ᵀ\n"
+            detalle += t("hamiltonian.eigen_level_real", lang=lang, idx=idx, val=E_val.real, vec=vec_str)
         else:
-            detalle += f"  Autovalor λ_{idx} = {E_val.real:+.6f}{E_val.imag:+.6f}i   -->   Vector propio = [ {vec_str} ]ᵀ\n"
+            val_str = f"{E_val.real:+.6f}{E_val.imag:+.6f}i"
+            detalle += t("hamiltonian.eigen_level_complex", lang=lang, idx=idx, val_str=val_str, vec=vec_str)
 
     bloques.append((detalle.strip(), "formula"))
-    bloques.append((f"  Residuo máximo de autoestados ||H|E⟩ - λ|E⟩||: {res.max_residuo_autovector:.2e}", "formula"))
+    bloques.append((t("hamiltonian.eigen_residual_info", lang=lang, res=res.max_residuo_autovector), "formula"))
 
+    # Step 3: Gap
     if res.es_hermitica:
+        bloques.append((t("hamiltonian.step3_title", lang=lang), "paso"))
+        freq = (res.brecha / HBAR_SI) if res.brecha else 0.0
+        gap_txt = t(
+            "hamiltonian.gap_info",
+            lang=lang,
+            E0=res.energias[0].real,
+            gap=res.brecha if res.brecha is not None else 0.0,
+            freq=freq,
+        )
         if res.es_degenerado:
-            brecha_str = "0.0000 (Espectro completamente degenerado; no hay nivel excitado superior distinto)."
-        else:
-            brecha_str = f"ΔE = {res.brecha:.6f}"
-        bloques.append((
-            f"💡 INTERPRETACIÓN FÍSICA: Estado fundamental con energía mínima E₀ = {res.energias[0].real:.6f}.\n"
-            f"Brecha cuántica hacia el primer nivel distinto: {brecha_str}",
-            "conclusion"
-        ))
+            gap_txt += "\n" + t("hamiltonian.gap_degenerate_note", lang=lang)
+        bloques.append((gap_txt, "conclusion"))
     else:
-        bloques.append((
-            "⚠️ ATENCIÓN: Al tratarse de una matriz no Hermítica, los autovalores poseen partes complejas "
-            "o el operador no es autoadjunto. Las partes imaginarias corresponden a tasas de amortiguamiento/decaimiento "
-            "o ganancia en sistemas cuánticos abiertos o efectivos.",
-            "advertencia"
-        ))
+        bloques.append((t("hamiltonian.non_hermitian_warning", lang=lang), "advertencia"))
 
-    # Time evolution
+    # Step 4: Time evolution
     if res.psi_t is not None:
-        bloques.append(("🔹 PASO 3: Evolución Temporal Cuántica |ψ(t)⟩ = exp(-iHt/ℏ) |ψ(0)⟩", "paso"))
+        bloques.append((t("hamiltonian.step4_title", lang=lang), "paso"))
         psi_0_str = "  ".join([f"{v.real:+.4f}{v.imag:+.4f}i" for v in res.psi_0])
         psi_t_str = "  ".join([f"{v.real:+.4f}{v.imag:+.4f}i" for v in res.psi_t])
         t_str = f"{res.evolucion_t:.4f}" if res.evolucion_t is not None else "0.0000"
-        etiqueta_norma = (
-            "Conservación unitaria de la norma"
-            if res.es_hermitica
-            else "Evolución no unitaria (disipación / decaimiento o ganancia en sistema abierto)"
-        )
-        bloques.append((
-            f"  Estado inicial normalizado |ψ(0)⟩: [ {psi_0_str} ]ᵀ\n"
-            f"  Tiempo transcurrido: t = {t_str}\n"
-            f"  Estado evolucionado |ψ(t)⟩:        [ {psi_t_str} ]ᵀ\n"
-            f"  Norma de |ψ(t)⟩: ||ψ(t)|| = {res.norma_psi_t:.6f} ({etiqueta_norma})",
-            "formula"
-        ))
+
+        if res.es_hermitica:
+            evo_txt = t(
+                "hamiltonian.evolution_unitary",
+                lang=lang,
+                t=t_str,
+                psi_0=psi_0_str,
+                psi_t=psi_t_str,
+                norm_0=1.0,
+                norm_t=res.norma_psi_t,
+            )
+        else:
+            evo_txt = t(
+                "hamiltonian.evolution_non_unitary",
+                lang=lang,
+                t=t_str,
+                psi_0=psi_0_str,
+                psi_t=psi_t_str,
+                norm_0=1.0,
+                norm_t=res.norma_psi_t,
+            )
+        bloques.append((evo_txt, "formula"))
 
     return bloques
 

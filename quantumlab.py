@@ -1,8 +1,14 @@
+try:
+    import _pylong
+except ImportError:
+    pass
+
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import sympy as sp
 import numpy as np
 
+from quantumlab_i18n import get_i18n, t
 from quantumlab_engine.parser import (
     SafeASTParser,
     ParseSecurityError,
@@ -49,78 +55,14 @@ class CalculadoraCuanticaAvanzada:
         "success": "#70E4AF",
     }
 
-    NOMBRES = [
-        "Función de onda", "Schrödinger 1D", "Pozo infinito",
-        "Oscilador armónico", "Efecto túnel", "Hamiltoniano",
-    ]
-    SUBTITULOS = [
-        "Normalización y Heisenberg",
-        "Autoestados y energía",
-        "Probabilidad en una región",
-        "Niveles de energía",
-        "Barrera de potencial",
-        "Autovalores y autovectores",
-    ]
-    DESCRIPCIONES = [
-        "Analiza ψ(x), valores esperados e incertidumbres cuánticas rigurosas.",
-        "Comprueba autoestados de Schrödinger, normalizabilidad y energía.",
-        "Calcula estados cuantizados n≥1 y probabilidades exactas en el pozo.",
-        "Estudia el estado fundamental y niveles excitados n≥0 con Hermite.",
-        "Estima transmisión cuántica y reflexión en todas las energías E, V₀.",
-        "Diagonaliza matrices hermíticas/no-hermíticas y calcula evolución temporal.",
-    ]
-
-    PRESETS = [
-        {
-            "psi": "exp(-x**2 / 2)",
-            "potencial": "0",
-            "lim_a": "-oo",
-            "lim_b": "oo",
-            "params": "Paquete Gaussiano estándar",
-        },
-        {
-            "psi": "sin(pi*x/L)",
-            "potencial": "0",
-            "lim_a": "0",
-            "lim_b": "L",
-            "params": "Autoestado de caja cuántica",
-        },
-        {
-            "psi": "sqrt(2/L)*sin(n*pi*x/L)",
-            "potencial": "0 (Dentro del pozo), oo (Fuera)",
-            "lim_a": "0",
-            "lim_b": "L/3",
-            "params": "n=1, L=1.0 (nm)",
-        },
-        {
-            "psi": "exp(-m*w*x**2 / (2*hbar))",
-            "potencial": "(1/2)*m*w**2*x**2",
-            "lim_a": "-oo",
-            "lim_b": "oo",
-            "params": "n=0 (Estado base)",
-        },
-        {
-            "psi": "exp(I*k*x)",
-            "potencial": "V0 = 5.0 eV",
-            "lim_a": "0",
-            "lim_b": "0.5",
-            "params": "E=3.2, V0=5.0, a=0.5 (E, V0 en eV; ancho a en nm)",
-        },
-        {
-            "psi": "[1, 0] (Estado inicial |ψ(0)⟩)",
-            "potencial": "Sistema de 2 niveles acoplados",
-            "lim_a": "0",
-            "lim_b": "1",
-            "params": "2, 1-1j; 1+1j, 3",
-        },
-    ]
-
     def __init__(self, root):
         self.root = root
-        self.root.title("QuantumLab  |  Calculadora Cuántica Pro Max")
+        self.i18n = get_i18n()
+
+        self.root.title(t("app.title"))
         self.root.configure(bg=self.C["background"])
 
-        # QL-024: Responsive initial sizing adapted to screen resolution
+        # Responsive initial sizing adapted to screen resolution
         screen_w = root.winfo_screenwidth()
         screen_h = root.winfo_screenheight()
         w = min(1460, max(760, screen_w - 40))
@@ -136,9 +78,22 @@ class CalculadoraCuanticaAvanzada:
         self.L = SafeASTParser.L
         self.n = SafeASTParser.n
 
-        # QL-026: Persistent inputs per mode so clicking modes does not erase user inputs
+        # Tracking state
         self._modo_actual = 0
-        self._inputs_por_modo = {i: dict(p) for i, p in enumerate(self.PRESETS)}
+        self._ultimo_resultado = None
+        self._ultimo_modo = None
+
+        # Persistent inputs per mode so clicking modes does not erase user inputs
+        self._inputs_por_modo = {
+            i: {
+                "psi": t(f"preset.{i}.psi"),
+                "potencial": t(f"preset.{i}.pot"),
+                "lim_a": t(f"preset.{i}.lim_a"),
+                "lim_b": t(f"preset.{i}.lim_b"),
+                "params": t(f"preset.{i}.params"),
+            }
+            for i in range(6)
+        }
 
         self._configurar_estilos()
         self._construir_layout_dividido()
@@ -149,6 +104,31 @@ class CalculadoraCuanticaAvanzada:
         self.root.bind("<Control-Return>", lambda event: self.resolver_ecuacion())
         self.root.bind("<Control-s>", lambda event: self.exportar_hoja())
         self.root.bind("<Control-l>", lambda event: self.limpiar_hoja())
+
+    @property
+    def NOMBRES(self):
+        return [t(f"module.{i}.name") for i in range(6)]
+
+    @property
+    def SUBTITULOS(self):
+        return [t(f"module.{i}.sub") for i in range(6)]
+
+    @property
+    def DESCRIPCIONES(self):
+        return [t(f"module.{i}.desc") for i in range(6)]
+
+    @property
+    def PRESETS(self):
+        return [
+            {
+                "psi": t(f"preset.{i}.psi"),
+                "potencial": t(f"preset.{i}.pot"),
+                "lim_a": t(f"preset.{i}.lim_a"),
+                "lim_b": t(f"preset.{i}.lim_b"),
+                "params": t(f"preset.{i}.params"),
+            }
+            for i in range(6)
+        ]
 
     def _configurar_estilos(self):
         style = ttk.Style(self.root)
@@ -216,13 +196,147 @@ class CalculadoraCuanticaAvanzada:
         name.pack(anchor="w")
         self._texto(name, "QUANTUM", 17, "text", "bold").pack(side="left")
         self._texto(name, "LAB", 17, "accent", "bold").pack(side="left", padx=(5, 0))
-        self._texto(brand, "ESTUDIO DE MECÁNICA CUÁNTICA  /  PRO MAX (SECURED)", 8, "muted", "bold").pack(anchor="w")
+        self.header_sub = self._texto(brand, t("header.brand_sub"), 8, "muted", "bold")
+        self.header_sub.pack(anchor="w")
 
         right = tk.Frame(inner, bg=self.C["header"])
         right.pack(side="right", fill="y")
-        self._texto(right, "MOTOR CIENTÍFICO VERIFICADO", 9, "success", "bold").pack(anchor="e", pady=(2, 3))
-        self._texto(right, "SymPy  •  NumPy  •  AST Parser", 9, "secondary").pack(anchor="e")
+
+        # Language Selector (Permanently visible in header across all modules)
+        # Requirement: Label must be permanently 'Language' (never translated)
+        # Options must be 'English' and 'Spanish'
+        lang_frame = tk.Frame(right, bg=self.C["header"])
+        lang_frame.pack(side="right", padx=(16, 0), pady=6)
+
+        self.lbl_language = tk.Label(
+            lang_frame, text="🌐 Language", font=("Segoe UI", 9, "bold"),
+            bg=self.C["header"], fg=self.C["accent"]
+        )
+        self.lbl_language.pack(side="left", padx=(0, 6))
+
+        self.combo_lang = ttk.Combobox(
+            lang_frame, values=["English", "Spanish"], state="readonly",
+            style="Quantum.TCombobox", width=9, takefocus=True
+        )
+        current_lang = self.i18n.current_language
+        self.combo_lang.set("English" if current_lang == "en" else "Spanish")
+        self.combo_lang.pack(side="left")
+        self.combo_lang.bind("<<ComboboxSelected>>", self._on_cambiar_idioma_combo)
+
+        # Verified Engine Info
+        info_frame = tk.Frame(right, bg=self.C["header"])
+        info_frame.pack(side="left", padx=(0, 10))
+        self.header_verified = self._texto(info_frame, t("header.engine_verified"), 9, "success", "bold")
+        self.header_verified.pack(anchor="e", pady=(2, 3))
+        self.header_libs = self._texto(info_frame, t("header.engine_libs"), 9, "secondary")
+        self.header_libs.pack(anchor="e")
+
         self._linea(self.root).pack(fill="x")
+
+    def _on_cambiar_idioma_combo(self, event=None):
+        val = self.combo_lang.get()
+        new_lang = "en" if val == "English" else "es"
+        self._cambiar_idioma(new_lang)
+
+    def _cambiar_idioma(self, new_lang: str):
+        if self.i18n.current_language == new_lang:
+            return
+        self.i18n.set_language(new_lang)
+        self.combo_lang.set("English" if new_lang == "en" else "Spanish")
+        self._actualizar_textos_ui()
+
+    def _actualizar_textos_ui(self):
+        """
+        Dynamically updates all UI texts to the currently active language.
+        Preserves user inputs, current mode, window layout, and re-renders existing calculation.
+        """
+        # Window & header
+        self.root.title(t("app.title"))
+        self.header_sub.config(text=t("header.brand_sub"))
+        self.header_verified.config(text=t("header.engine_verified"))
+        self.header_libs.config(text=t("header.engine_libs"))
+        # (self.lbl_language intentionally stays 'Language')
+
+        # Sidebar
+        self.sidebar_ws_title.config(text=t("sidebar.workspace_title"))
+        self.sidebar_mod_title.config(text=t("sidebar.modules_title"))
+        self.sidebar_mod_sub.config(text=t("sidebar.modules_sub"))
+
+        self.modos = [t(f"module.{i}.combo") for i in range(6)]
+        self.combo_modo.config(values=self.modos)
+        self.combo_modo.current(self._modo_actual)
+
+        for i, widgets in enumerate(self.nav_filas):
+            fila, barra, numero, contenido, title, sub = widgets
+            title.config(text=t(f"module.{i}.name"))
+            sub.config(text=t(f"module.{i}.sub"))
+
+        self.lbl_shortcuts_title.config(text=t("sidebar.shortcuts_title"))
+        self.lbl_shortcut_calc.config(text=t("sidebar.shortcut_calc"))
+        self.lbl_shortcut_export.config(text=t("sidebar.shortcut_export"))
+        self.lbl_shortcut_clear.config(text=t("sidebar.shortcut_clear"))
+
+        # Editor
+        self.editor_contador.config(text=t("editor.step_counter", current=self._modo_actual + 1, total=6))
+        self.editor_titulo.config(text=t(f"module.{self._modo_actual}.name"))
+        self.editor_descripcion.config(text=t(f"module.{self._modo_actual}.desc"))
+
+        self.lbl_rotulo_psi.config(text=t("editor.label_psi"))
+        self.lbl_rotulo_pot.config(text=t("editor.label_pot"))
+        self.lbl_rotulo_limits.config(text=t("editor.label_limits"))
+        self.lbl_lim_a_desc.config(text=t("editor.label_lim_a"))
+        self.lbl_lim_b_desc.config(text=t("editor.label_lim_b"))
+        self.lbl_rotulo_params.config(text=t("editor.label_params"))
+
+        self.lbl_kbd_title.config(text=t("editor.keyboard_title"))
+        self.lbl_kbd_hint.config(text=t("editor.keyboard_hint"))
+
+        self.btn_solve.config(text=t("editor.btn_solve"))
+        self.btn_clear.config(text=t("editor.btn_clear"))
+        self.btn_reset.config(text=t("editor.btn_reset"))
+        self.btn_export.config(text=t("editor.btn_export"))
+
+        # Refresh hints for active mode
+        self._actualizar_visual_modo()
+
+        # Results console
+        self.lbl_res_console.config(text=t("results.console_title"))
+        self.lbl_res_sheet.config(text=t("results.sheet_title"))
+        self.lbl_res_step.config(text=t("results.step_by_step"))
+        self.lbl_empty_title.config(text=t("results.empty_title"))
+        self.lbl_empty_desc.config(text=t("results.empty_desc"))
+        self.lbl_res_footer.config(text=t("results.footer_info"))
+
+        # Footer
+        self.lbl_footer_brand.config(text=t("footer.brand"))
+        self.lbl_footer_security.config(text=t("footer.security"))
+
+        # If results exist, re-render immediately in the new language without recalculating
+        if self._ultimo_resultado is not None and self._ultimo_modo is not None:
+            self.hoja.delete("1.0", tk.END)
+            self.estado_vacio.place_forget()
+            modo = self._ultimo_modo
+            res = self._ultimo_resultado
+            if modo == 0:
+                bloques = formatear_analisis_onda(res)
+            elif modo == 1:
+                bloques = formatear_schrodinger(res)
+            elif modo == 2:
+                bloques = formatear_pozo_infinito(res)
+            elif modo == 3:
+                bloques = formatear_oscilador(res)
+            elif modo == 4:
+                bloques = formatear_tunel(res)
+            elif modo == 5:
+                bloques = formatear_hamiltoniano(res)
+            else:
+                bloques = []
+
+            self._escribir_bloques(bloques)
+            self._escribir("═" * 68, "separador")
+            self.etiqueta_estado.config(text=t("status.available"), fg=self.C["success"])
+        else:
+            self.etiqueta_estado.config(text=t("status.no_results"), fg=self.C["muted"])
 
     def _construir_sidebar(self):
         sidebar = tk.Frame(
@@ -232,28 +346,26 @@ class CalculadoraCuanticaAvanzada:
         sidebar.grid(row=0, column=0, sticky="nsew", padx=(0, 11))
         sidebar.grid_propagate(False)
 
-        self._texto(sidebar, "ESPACIO DE TRABAJO", 9, "muted", "bold").pack(anchor="w", padx=18, pady=(20, 6))
-        self._texto(sidebar, "Módulos de cálculo", 12, "text", "bold").pack(anchor="w", padx=18)
-        self._texto(sidebar, "Selecciona un sistema", 9, "secondary").pack(anchor="w", padx=18, pady=(3, 14))
+        self.sidebar_ws_title = self._texto(sidebar, t("sidebar.workspace_title"), 9, "muted", "bold")
+        self.sidebar_ws_title.pack(anchor="w", padx=18, pady=(20, 6))
+
+        self.sidebar_mod_title = self._texto(sidebar, t("sidebar.modules_title"), 12, "text", "bold")
+        self.sidebar_mod_title.pack(anchor="w", padx=18)
+
+        self.sidebar_mod_sub = self._texto(sidebar, t("sidebar.modules_sub"), 9, "secondary")
+        self.sidebar_mod_sub.pack(anchor="w", padx=18, pady=(3, 14))
+
         self._linea(sidebar).pack(fill="x", padx=17, pady=(0, 12))
 
-        self.modos = [
-            "1. Análisis Completo de Función de Onda ψ(x): Normalización, ⟨x⟩, ⟨p⟩, ⟨T⟩ y Heisenberg",
-            "2. Ecuación de Schrödinger 1D: Verificar autoestado y extraer Energía E(x)",
-            "3. Sistema Completo: Pozo de Potencial Infinito 1D y Probabilidad en Región",
-            "4. Sistema Completo: Oscilador Armónico Cuántico y Niveles de Energía",
-            "5. Efecto Túnel Cuántico: Transmisión a través de Barrera de Potencial",
-            "6. Diagonalización de Hamiltoniano Matricial (H|ψ⟩ = E|ψ⟩) y Evolución Temporal",
-        ]
+        self.modos = [t(f"module.{i}.combo") for i in range(6)]
 
-        # QL-025: Fully synchronized and accessible Combobox
         self.combo_modo = ttk.Combobox(sidebar, values=self.modos, state="readonly", style="Quantum.TCombobox")
         self.combo_modo.current(0)
         self.combo_modo.pack(fill="x", padx=14, pady=(0, 10))
         self.combo_modo.bind("<<ComboboxSelected>>", lambda e: self._seleccionar_modo(self.combo_modo.current()))
 
         self.nav_filas = []
-        for i, (nombre, subtitulo) in enumerate(zip(self.NOMBRES, self.SUBTITULOS)):
+        for i in range(6):
             fila = tk.Frame(sidebar, bg=self.C["surface"], cursor="hand2", height=54)
             fila.pack(fill="x", padx=8, pady=2)
             fila.pack_propagate(False)
@@ -263,9 +375,9 @@ class CalculadoraCuanticaAvanzada:
             numero.pack(side="left", padx=(8, 8))
             contenido = tk.Frame(fila, bg=self.C["surface"])
             contenido.pack(side="left", fill="both", expand=True)
-            title = self._texto(contenido, nombre, 10, "text", "bold", anchor="w")
+            title = self._texto(contenido, t(f"module.{i}.name"), 10, "text", "bold", anchor="w")
             title.pack(fill="x", pady=(6, 1))
-            sub = self._texto(contenido, subtitulo, 8, "muted", anchor="w")
+            sub = self._texto(contenido, t(f"module.{i}.sub"), 8, "muted", anchor="w")
             sub.pack(fill="x")
             widgets = (fila, barra, numero, contenido, title, sub)
             for widget in widgets:
@@ -276,13 +388,21 @@ class CalculadoraCuanticaAvanzada:
 
         tk.Frame(sidebar, bg=self.C["surface"]).pack(fill="both", expand=True)
         self._linea(sidebar).pack(fill="x", padx=17, pady=(5, 12))
-        self._texto(sidebar, "ATAJOS DE TECLADO", 8, "muted", "bold").pack(anchor="w", padx=18)
-        self._texto(sidebar, "Ctrl + Enter   Resolver", 9, "secondary").pack(anchor="w", padx=18, pady=(7, 2))
-        self._texto(sidebar, "Ctrl + S       Exportar", 9, "secondary").pack(anchor="w", padx=18, pady=2)
-        self._texto(sidebar, "Ctrl + L       Limpiar", 9, "secondary").pack(anchor="w", padx=18, pady=(2, 16))
+
+        self.lbl_shortcuts_title = self._texto(sidebar, t("sidebar.shortcuts_title"), 8, "muted", "bold")
+        self.lbl_shortcuts_title.pack(anchor="w", padx=18)
+
+        self.lbl_shortcut_calc = self._texto(sidebar, t("sidebar.shortcut_calc"), 9, "secondary")
+        self.lbl_shortcut_calc.pack(anchor="w", padx=18, pady=(7, 2))
+
+        self.lbl_shortcut_export = self._texto(sidebar, t("sidebar.shortcut_export"), 9, "secondary")
+        self.lbl_shortcut_export.pack(anchor="w", padx=18, pady=2)
+
+        self.lbl_shortcut_clear = self._texto(sidebar, t("sidebar.shortcut_clear"), 9, "secondary")
+        self.lbl_shortcut_clear.pack(anchor="w", padx=18, pady=(2, 16))
 
     def _guardar_entradas_actuales(self):
-        """QL-026: Saves current entry contents to avoid losing work when switching modes."""
+        """Saves current entry contents to avoid losing work when switching modes."""
         self._inputs_por_modo[self._modo_actual] = {
             "psi": self.entry_psi.get(),
             "potencial": self.entry_potencial.get(),
@@ -299,7 +419,17 @@ class CalculadoraCuanticaAvanzada:
         self.entry_lim_b.delete(0, tk.END)
         self.entry_params.delete(0, tk.END)
 
-        data = self.PRESETS[idx] if forzar_preset else self._inputs_por_modo.get(idx, self.PRESETS[idx])
+        if forzar_preset or idx not in self._inputs_por_modo:
+            data = {
+                "psi": t(f"preset.{idx}.psi"),
+                "potencial": t(f"preset.{idx}.pot"),
+                "lim_a": t(f"preset.{idx}.lim_a"),
+                "lim_b": t(f"preset.{idx}.lim_b"),
+                "params": t(f"preset.{idx}.params"),
+            }
+        else:
+            data = self._inputs_por_modo.get(idx, self.PRESETS[idx])
+
         self.entry_psi.insert(0, data["psi"])
         self.entry_potencial.insert(0, data["potencial"])
         self.entry_lim_a.insert(0, data["lim_a"])
@@ -307,9 +437,7 @@ class CalculadoraCuanticaAvanzada:
         self.entry_params.insert(0, data["params"])
 
     def _seleccionar_modo(self, idx):
-        """QL-026: Preserves user input when re-clicking the same mode or switching."""
         if idx == self._modo_actual:
-            # Re-clicking the active card does NOT erase user inputs!
             return
 
         self._guardar_entradas_actuales()
@@ -323,7 +451,10 @@ class CalculadoraCuanticaAvanzada:
         """Explicitly reloads the default preset for the current mode."""
         self._cargar_modo(self._modo_actual, forzar_preset=True)
         self._guardar_entradas_actuales()
-        messagebox.showinfo("Preset restablecido", f"Se cargó el ejemplo predeterminado para '{self.NOMBRES[self._modo_actual]}'.")
+        messagebox.showinfo(
+            t("dialog.preset_restored_title"),
+            t("dialog.preset_restored_msg", name=t(f"module.{self._modo_actual}.name")),
+        )
 
     def _cargar_preset_ejemplo(self):
         """Backward-compatibility wrapper for test suites and presets."""
@@ -349,23 +480,13 @@ class CalculadoraCuanticaAvanzada:
     def _actualizar_visual_modo(self):
         idx = self.combo_modo.current()
         self._pintar_navegacion()
-        self.editor_contador.config(text=f"MÓDULO  {idx+1:02d} / 06")
-        self.editor_titulo.config(text=self.NOMBRES[idx])
-        self.editor_descripcion.config(text=self.DESCRIPCIONES[idx])
+        self.editor_contador.config(text=t("editor.step_counter", current=idx + 1, total=6))
+        self.editor_titulo.config(text=t(f"module.{idx}.name"))
+        self.editor_descripcion.config(text=t(f"module.{idx}.desc"))
 
-        # QL-030: Dynamic hints indicating which inputs are active in current mode
-        hints = [
-            ("ψ(x)", "V(x) [Informativo]", "Límite inf. a", "Límite sup. b", "Parámetros [Informativo]"),
-            ("ψ(x)", "Potencial V(x)", "Límite inf. a (opcional)", "Límite sup. b (opcional)", "Parámetros [Informativo]"),
-            ("ψ(x) analítica", "V(x) [Informativo]", "Región inf. a", "Región sup. b", "n entero (ej. n=1, L=1.0)"),
-            ("ψ(x) analítica", "V(x) armónico", "Límite inf. [-oo]", "Límite sup. [oo]", "Nivel n (ej. n=0, 1, 2...)"),
-            ("Onda incidente", "Barrera V₀", "Límite a", "Espesor a (nm)", "E, V0, a (ej. E=3.2, V0=5.0, a=0.5)"),
-            ("Estado inicial |ψ(0)⟩", "Sistema", "Tiempo t", "Límite b", "Matriz H (ej. 2, 1-1j; 1+1j, 3)"),
-        ]
-        h = hints[idx]
-        self.lbl_hint_psi.config(text=h[0])
-        self.lbl_hint_pot.config(text=h[1])
-        self.lbl_hint_params.config(text=h[4])
+        self.lbl_hint_psi.config(text=t(f"hint.{idx}.psi"))
+        self.lbl_hint_pot.config(text=t(f"hint.{idx}.pot"))
+        self.lbl_hint_params.config(text=t(f"hint.{idx}.params"))
 
     def _construir_editor(self):
         self.panel_izq = tk.Frame(
@@ -379,12 +500,15 @@ class CalculadoraCuanticaAvanzada:
         title_area = tk.Frame(self.panel_izq, bg=self.C["surface"], height=115)
         title_area.grid(row=0, column=0, sticky="ew")
         title_area.pack_propagate(False)
-        self.editor_contador = self._texto(title_area, "MÓDULO  01 / 06", 9, "accent", "bold")
+
+        self.editor_contador = self._texto(title_area, t("editor.step_counter", current=1, total=6), 9, "accent", "bold")
         self.editor_contador.pack(anchor="w", padx=23, pady=(16, 3))
-        self.editor_titulo = self._texto(title_area, "Función de onda", 18, "text", "bold")
+
+        self.editor_titulo = self._texto(title_area, t("module.0.name"), 18, "text", "bold")
         self.editor_titulo.pack(anchor="w", padx=23)
+
         self.editor_descripcion = self._texto(
-            title_area, "", 9, "secondary", anchor="w", justify="left", wraplength=340
+            title_area, t("module.0.desc"), 9, "secondary", anchor="w", justify="left", wraplength=340
         )
         self.editor_descripcion.pack(anchor="w", padx=23, pady=(2, 4))
         self._linea(title_area).pack(side="bottom", fill="x")
@@ -393,6 +517,7 @@ class CalculadoraCuanticaAvanzada:
         central.grid(row=1, column=0, sticky="nsew")
         central.grid_rowconfigure(0, weight=1)
         central.grid_columnconfigure(0, weight=1)
+
         self.canvas_entrada = tk.Canvas(
             central, bg=self.C["surface"], highlightthickness=0, bd=0, width=1, height=1
         )
@@ -403,6 +528,7 @@ class CalculadoraCuanticaAvanzada:
         )
         barra_scroll.grid(row=0, column=1, sticky="ns")
         self.canvas_entrada.configure(yscrollcommand=barra_scroll.set)
+
         inner = tk.Frame(self.canvas_entrada, bg=self.C["surface"])
         frame_id = self.canvas_entrada.create_window((0, 0), window=inner, anchor="nw")
         inner.bind("<Configure>", lambda e: self.canvas_entrada.configure(
@@ -415,36 +541,42 @@ class CalculadoraCuanticaAvanzada:
         form = tk.Frame(inner, bg=self.C["surface"])
         form.pack(fill="x", padx=20, pady=(14, 16))
 
-        self._rotulo(form, "01", "FUNCIÓN DE ONDA  ψ(x) / ESTADO")
+        self.lbl_rotulo_psi = self._rotulo(form, "01", t("editor.label_psi"))
         self.entry_psi = self._entrada(form, accent=True)
-        self.lbl_hint_psi = self._texto(form, "Expresión simbólica en función de x", 8, "muted")
+        self.lbl_hint_psi = self._texto(form, t("hint.0.psi"), 8, "muted")
         self.lbl_hint_psi.pack(anchor="w", pady=(3, 10))
 
-        self._rotulo(form, "02", "POTENCIAL  V(x)")
+        self.lbl_rotulo_pot = self._rotulo(form, "02", t("editor.label_pot"))
         self.entry_potencial = self._entrada(form)
-        self.lbl_hint_pot = self._texto(form, "Admite x, m, w y hbar", 8, "muted")
+        self.lbl_hint_pot = self._texto(form, t("hint.0.pot"), 8, "muted")
         self.lbl_hint_pot.pack(anchor="w", pady=(3, 10))
 
-        self._rotulo(form, "03", "LÍMITES DE INTEGRACIÓN / TIEMPO")
+        self.lbl_rotulo_limits = self._rotulo(form, "03", t("editor.label_limits"))
         limites = tk.Frame(form, bg=self.C["surface"])
         limites.pack(fill="x", pady=(4, 10))
         limites.grid_columnconfigure(0, weight=1, uniform="limits")
         limites.grid_columnconfigure(1, weight=1, uniform="limits")
-        self._texto(limites, "Límite inferior  a / t", 9, "secondary").grid(row=0, column=0, sticky="w")
-        self._texto(limites, "Límite superior  b", 9, "secondary").grid(row=0, column=1, sticky="w", padx=(8, 0))
+
+        self.lbl_lim_a_desc = self._texto(limites, t("editor.label_lim_a"), 9, "secondary")
+        self.lbl_lim_a_desc.grid(row=0, column=0, sticky="w")
+        self.lbl_lim_b_desc = self._texto(limites, t("editor.label_lim_b"), 9, "secondary")
+        self.lbl_lim_b_desc.grid(row=0, column=1, sticky="w", padx=(8, 0))
+
         self.entry_lim_a = self._entrada(limites, use_grid=True, column=0, padx=(0, 8))
         self.entry_lim_b = self._entrada(limites, use_grid=True, column=1, padx=(8, 0))
 
-        self._rotulo(form, "04", "PARÁMETROS / HAMILTONIANO H")
+        self.lbl_rotulo_params = self._rotulo(form, "04", t("editor.label_params"))
         self.entry_params = self._entrada(form)
-        self.lbl_hint_params = self._texto(form, "Separar columnas con ',' y filas con ';'", 8, "muted", wraplength=350, justify="left")
+        self.lbl_hint_params = self._texto(form, t("hint.0.params"), 8, "muted", wraplength=350, justify="left")
         self.lbl_hint_params.pack(anchor="w", pady=(3, 14))
 
         self._linea(form).pack(fill="x", pady=(0, 12))
         ptitle = tk.Frame(form, bg=self.C["surface"])
         ptitle.pack(fill="x", pady=(0, 9))
-        self._texto(ptitle, "TECLADO SIMBÓLICO", 10, "text", "bold").pack(side="left")
-        self._texto(ptitle, "Insertar en campo activo", 8, "muted").pack(side="right")
+        self.lbl_kbd_title = self._texto(ptitle, t("editor.keyboard_title"), 10, "text", "bold")
+        self.lbl_kbd_title.pack(side="left")
+        self.lbl_kbd_hint = self._texto(ptitle, t("editor.keyboard_hint"), 8, "muted")
+        self.lbl_kbd_hint.pack(side="right")
 
         pad = tk.Frame(form, bg=self.C["surface"])
         pad.pack(fill="x")
@@ -454,9 +586,9 @@ class CalculadoraCuanticaAvanzada:
         botones_simbolos = [
             ("sin(x)", "sin(x)"), ("cos(x)", "cos(x)"), ("exp(-x²)", "exp(-x**2)"), ("sqrt()", "sqrt()"),
             ("π (pi)", "pi"), ("ℏ (hbar)", "hbar"), ("∞ (oo)", "oo"), ("-∞ (-oo)", "-oo"),
-            ("x²", "x**2"), ("L (Ancho)", "L"), ("ω (Omega)", "w"), ("m (Masa)", "m"),
-            ("Pozo ψ₁", "sqrt(2/L)*sin(pi*x/L)"), ("Gaussiana", "exp(-x**2/2)"),
-            ("Armónico n=1", "x*exp(-x**2/2)"), ("H Pauli-X", "0, 1; 1, 0")
+            ("x²", "x**2"), ("L", "L"), ("ω", "w"), ("m", "m"),
+            ("ψ₁", "sqrt(2/L)*sin(pi*x/L)"), ("exp(-x²/2)", "exp(-x**2/2)"),
+            ("Armónico", "x*exp(-x**2/2)"), ("H Pauli-X", "0, 1; 1, 0")
         ]
         for i, (etiqueta, valor) in enumerate(botones_simbolos):
             boton = self._boton(
@@ -472,28 +604,44 @@ class CalculadoraCuanticaAvanzada:
         buttons = tk.Frame(action_area, bg=self.C["surface"])
         buttons.pack(fill="x", padx=20, pady=12)
 
-        run = self._boton(buttons, "⚡  RESOLVER ECUACIÓN", self.resolver_ecuacion,
-                          "accent", "accent_dark", fuente=11, alto=9)
-        run.config(activebackground="#90FFF1", activeforeground=self.C["accent_dark"])
-        run.pack(fill="x", pady=(0, 7))
+        self.btn_solve = self._boton(
+            buttons, t("editor.btn_solve"), self.resolver_ecuacion,
+            "accent", "accent_dark", fuente=11, alto=9
+        )
+        self.btn_solve.config(activebackground="#90FFF1", activeforeground=self.C["accent_dark"])
+        self.btn_solve.pack(fill="x", pady=(0, 7))
 
         row = tk.Frame(buttons, bg=self.C["surface"])
         row.pack(fill="x")
         row.grid_columnconfigure(0, weight=1)
         row.grid_columnconfigure(1, weight=1)
         row.grid_columnconfigure(2, weight=1)
-        self._boton(row, "Limpiar", self.limpiar_hoja,
-                    "surface_alt", "secondary", alto=7).grid(row=0, column=0, sticky="ew", padx=(0, 3))
-        self._boton(row, "Restablecer", self.restablecer_preset_actual,
-                    "surface_alt", "secondary", alto=7).grid(row=0, column=1, sticky="ew", padx=3)
-        self._boton(row, "Exportar", self.exportar_hoja,
-                    "surface_alt", "secondary", alto=7).grid(row=0, column=2, sticky="ew", padx=(3, 0))
+
+        self.btn_clear = self._boton(
+            row, t("editor.btn_clear"), self.limpiar_hoja,
+            "surface_alt", "secondary", alto=7
+        )
+        self.btn_clear.grid(row=0, column=0, sticky="ew", padx=(0, 3))
+
+        self.btn_reset = self._boton(
+            row, t("editor.btn_reset"), self.restablecer_preset_actual,
+            "surface_alt", "secondary", alto=7
+        )
+        self.btn_reset.grid(row=0, column=1, sticky="ew", padx=3)
+
+        self.btn_export = self._boton(
+            row, t("editor.btn_export"), self.exportar_hoja,
+            "surface_alt", "secondary", alto=7
+        )
+        self.btn_export.grid(row=0, column=2, sticky="ew", padx=(3, 0))
 
     def _rotulo(self, parent, indice, texto):
         linea = tk.Frame(parent, bg=self.C["surface"])
         linea.pack(fill="x", pady=(0, 5))
         self._texto(linea, indice, 9, "accent", "bold").pack(side="left", padx=(0, 8))
-        self._texto(linea, texto, 9, "secondary", "bold").pack(side="left")
+        lbl = self._texto(linea, texto, 9, "secondary", "bold")
+        lbl.pack(side="left")
+        return lbl
 
     def _entrada(self, parent, accent=False, use_grid=False, column=0, padx=0):
         campo = tk.Entry(
@@ -542,17 +690,30 @@ class CalculadoraCuanticaAvanzada:
         head = tk.Frame(self.panel_der, bg=self.C["surface"], height=115)
         head.grid(row=0, column=0, sticky="ew")
         head.pack_propagate(False)
-        self._texto(head, "CONSOLA DE RESULTADOS", 9, "violet", "bold").pack(anchor="w", padx=22, pady=(16, 3))
-        self._texto(head, "Hoja de resultados", 18, "text", "bold").pack(anchor="w", padx=22)
+
+        self.lbl_res_console = self._texto(head, t("results.console_title"), 9, "violet", "bold")
+        self.lbl_res_console.pack(anchor="w", padx=22, pady=(16, 3))
+
+        self.lbl_res_sheet = self._texto(head, t("results.sheet_title"), 18, "text", "bold")
+        self.lbl_res_sheet.pack(anchor="w", padx=22)
+
         bottom = tk.Frame(head, bg=self.C["surface"])
         bottom.pack(fill="x", padx=22, pady=(2, 0))
-        self._texto(bottom, "Desarrollo matemático paso a paso", 9, "secondary").pack(side="left")
-        self.etiqueta_estado = self._texto(bottom, "SIN RESULTADOS", 8, "muted", "bold")
+
+        self.lbl_res_step = self._texto(bottom, t("results.step_by_step"), 9, "secondary")
+        self.lbl_res_step.pack(side="left")
+
+        # Fixed width and right anchor eliminates Windows GDI pixel ghosting artifacts
+        self.etiqueta_estado = tk.Label(
+            bottom, text=t("status.no_results"), font=("Segoe UI", 8, "bold"),
+            bg=self.C["surface"], fg=self.C["muted"], width=26, anchor="e"
+        )
         self.etiqueta_estado.pack(side="right")
         self._linea(head).pack(side="bottom", fill="x")
 
         output_container = tk.Frame(self.panel_der, bg=self.C["editor"])
         output_container.grid(row=1, column=0, sticky="nsew", padx=12, pady=12)
+
         self.hoja = tk.Text(
             output_container, bg=self.C["editor"], fg=self.C["secondary"],
             insertbackground=self.C["accent"],
@@ -597,27 +758,32 @@ class CalculadoraCuanticaAvanzada:
 
         self.estado_vacio = tk.Frame(output_container, bg=self.C["editor"])
         self._texto(self.estado_vacio, "⚛", 44, "accent").pack(pady=(0, 14))
-        self._texto(self.estado_vacio, "Tu espacio de resultados", 15, "text", "bold").pack()
-        self._texto(
+        self.lbl_empty_title = self._texto(self.estado_vacio, t("results.empty_title"), 15, "text", "bold")
+        self.lbl_empty_title.pack()
+        self.lbl_empty_desc = self._texto(
             self.estado_vacio,
-            "Selecciona un módulo, ajusta las entradas\ny ejecuta el cálculo para ver los pasos.",
+            t("results.empty_desc"),
             10, "secondary", justify="center"
-        ).pack(pady=(8, 0))
+        )
+        self.lbl_empty_desc.pack(pady=(8, 0))
         self.estado_vacio.place(relx=0.5, rely=0.45, anchor="center")
 
         footer = tk.Frame(self.panel_der, bg=self.C["surface"])
         footer.grid(row=2, column=0, sticky="ew")
         self._linea(footer).pack(fill="x")
-        self._texto(
-            footer, "SALIDA SIMBÓLICA  •  MOTOR MATEMÁTICO VERIFICADO  •  EXPORTACIÓN .TXT",
+        self.lbl_res_footer = self._texto(
+            footer, t("results.footer_info"),
             8, "muted", "bold"
-        ).pack(anchor="w", padx=22, pady=12)
+        )
+        self.lbl_res_footer.pack(anchor="w", padx=22, pady=12)
 
     def _construir_pie(self):
         footer = tk.Frame(self.root, bg=self.C["background"])
         footer.pack(fill="x", side="bottom", padx=23, pady=(0, 9))
-        self._texto(footer, "QUANTUMLAB  /  WORKSPACE", 8, "muted", "bold").pack(side="left")
-        self._texto(footer, "Motor científico riguroso  ·  Seguridad AST activa", 8, "muted").pack(side="right")
+        self.lbl_footer_brand = self._texto(footer, t("footer.brand"), 8, "muted", "bold")
+        self.lbl_footer_brand.pack(side="left")
+        self.lbl_footer_security = self._texto(footer, t("footer.security"), 8, "muted")
+        self.lbl_footer_security.pack(side="right")
 
     def _insertar_en_foco(self, texto):
         widget = self.root.focus_get()
@@ -653,19 +819,22 @@ class CalculadoraCuanticaAvanzada:
 
     def limpiar_hoja(self):
         self.hoja.delete("1.0", tk.END)
+        self._ultimo_resultado = None
+        self._ultimo_modo = None
         self.estado_vacio.place(relx=0.5, rely=0.45, anchor="center")
-        self.etiqueta_estado.config(text="SIN RESULTADOS", fg=self.C["muted"])
+        self.etiqueta_estado.config(text=t("status.no_results"), fg=self.C["muted"])
 
     def exportar_hoja(self):
-        """QL-028: Robust file export with system exception handling."""
+        """Robust file export with localized dialog messages and exception handling."""
         contenido = self.hoja.get("1.0", tk.END).strip()
         if not contenido:
-            messagebox.showwarning("Hoja vacía", "Resuelve primero una ecuación antes de exportar.")
+            messagebox.showwarning(t("dialog.export_empty_title"), t("dialog.export_empty_msg"))
             return
 
         ruta = filedialog.asksaveasfilename(
+            title=t("dialog.export_title"),
             defaultextension=".txt",
-            filetypes=[("Archivo de Texto", "*.txt"), ("Todos los archivos", "*.*")]
+            filetypes=[("Text File (*.txt)", "*.txt"), ("All Files (*.*)", "*.*")]
         )
         if not ruta:
             return
@@ -673,21 +842,27 @@ class CalculadoraCuanticaAvanzada:
         try:
             with open(ruta, "w", encoding="utf-8") as f:
                 f.write(contenido)
-            messagebox.showinfo("Exportado exitoso", f"Hoja de resultados guardada correctamente en:\n{ruta}")
+            messagebox.showinfo(
+                t("dialog.export_success_title"),
+                t("dialog.export_success_msg", path=ruta)
+            )
         except OSError as e:
-            messagebox.showerror("Error al guardar archivo", f"No se pudo escribir en la ruta especificada:\n{e}")
+            messagebox.showerror(
+                t("dialog.export_error_title"),
+                t("dialog.export_error_msg", error=str(e))
+            )
 
     def _parsear_expresion(self, texto):
-        """QL-001: Safe AST parser replacing sp.sympify()."""
+        """Safe AST parser replacing sp.sympify()."""
         return SafeASTParser.parse(texto)
 
     # =========================================================
     # MOTOR DE RESOLUCIÓN Y DESPACHO
     # =========================================================
     def resolver_ecuacion(self):
-        """QL-027: Handles calculation with accurate status updates without false claims."""
+        """Handles calculation with accurate status updates without false claims."""
         modo = self.combo_modo.current()
-        self.etiqueta_estado.config(text="CALCULANDO...", fg=self.C["warning"])
+        self.etiqueta_estado.config(text=t("status.calculating"), fg=self.C["warning"])
         self.root.update_idletasks()
 
         try:
@@ -705,17 +880,17 @@ class CalculadoraCuanticaAvanzada:
                 self._resolver_hamiltoniano_matricial()
 
             self._escribir("═" * 68, "separador")
-            self.etiqueta_estado.config(text="RESULTADOS DISPONIBLES", fg=self.C["success"])
+            self.etiqueta_estado.config(text=t("status.available"), fg=self.C["success"])
 
         except ParseSecurityError as e:
-            self.etiqueta_estado.config(text="ERROR DE SINTAXIS/SEGURIDAD", fg=self.C["warning"])
-            messagebox.showerror("Error de Sintaxis / Seguridad Matemática", str(e))
+            self.etiqueta_estado.config(text=t("status.syntax_error"), fg=self.C["warning"])
+            messagebox.showerror(t("dialog.error_syntax_title"), str(e))
         except ValueError as e:
-            self.etiqueta_estado.config(text="ERROR EN PARÁMETROS", fg=self.C["warning"])
-            messagebox.showerror("Parámetro o Dominio Inválido", str(e))
+            self.etiqueta_estado.config(text=t("status.param_error"), fg=self.C["warning"])
+            messagebox.showerror(t("dialog.error_param_title"), str(e))
         except Exception as e:
-            self.etiqueta_estado.config(text="ERROR DE CÁLCULO", fg=self.C["warning"])
-            messagebox.showerror("Error de Cálculo Científico", f"Ocurrió un error al procesar el sistema:\n{e}")
+            self.etiqueta_estado.config(text=t("status.calc_error"), fg=self.C["warning"])
+            messagebox.showerror(t("dialog.error_calc_title"), t("dialog.error_calc_prefix") + str(e))
 
     # =========================================================
     # RESOLUTORES POR MODALIDAD
@@ -726,6 +901,8 @@ class CalculadoraCuanticaAvanzada:
         b = self._parsear_expresion(self.entry_lim_b.get())
 
         res = analizar_funcion_onda(psi_raw, a, b)
+        self._ultimo_resultado = res
+        self._ultimo_modo = 0
         bloques = formatear_analisis_onda(res)
         self._escribir_bloques(bloques)
 
@@ -733,13 +910,14 @@ class CalculadoraCuanticaAvanzada:
         psi = self._parsear_expresion(self.entry_psi.get())
         V = self._parsear_expresion(self.entry_potencial.get())
 
-        # Read optional integration bounds if provided
         a_str = self.entry_lim_a.get().strip()
         b_str = self.entry_lim_b.get().strip()
         a = self._parsear_expresion(a_str) if a_str else None
         b = self._parsear_expresion(b_str) if b_str else None
 
         res = analizar_schrodinger_1d(psi, V, a=a, b=b)
+        self._ultimo_resultado = res
+        self._ultimo_modo = 1
         bloques = formatear_schrodinger(res)
         self._escribir_bloques(bloques)
 
@@ -748,17 +926,22 @@ class CalculadoraCuanticaAvanzada:
         b = self._parsear_expresion(self.entry_lim_b.get())
 
         params = parse_parameters(self.entry_params.get())
-        n_val = int(params.get("n", 1))
+        n_val = params.get("n", 1)
+        L_val = params.get("L", None)
 
-        res = analizar_pozo_infinito(a, b, n_val=n_val)
+        res = analizar_pozo_infinito(a, b, n_val=n_val, L_val=L_val)
+        self._ultimo_resultado = res
+        self._ultimo_modo = 2
         bloques = formatear_pozo_infinito(res)
         self._escribir_bloques(bloques)
 
     def _resolver_oscilador_armonico(self):
         params = parse_parameters(self.entry_params.get())
-        n_val = int(params.get("n", 0))
+        n_val = params.get("n", 0)
 
         res = analizar_oscilador_armonico(n_val=n_val)
+        self._ultimo_resultado = res
+        self._ultimo_modo = 3
         bloques = formatear_oscilador(res)
         self._escribir_bloques(bloques)
 
@@ -769,6 +952,8 @@ class CalculadoraCuanticaAvanzada:
         ancho_nm = float(params.get("a", 0.5))
 
         res = analizar_efecto_tunel(E_ev=E_ev, V0_ev=V0_ev, ancho_nm=ancho_nm)
+        self._ultimo_resultado = res
+        self._ultimo_modo = 4
         bloques = formatear_tunel(res)
         self._escribir_bloques(bloques)
 
@@ -776,12 +961,10 @@ class CalculadoraCuanticaAvanzada:
         raw_matrix = self.entry_params.get().strip()
         H = parse_matrix(raw_matrix)
 
-        # Parse initial state vector if provided
         raw_psi = self.entry_psi.get().strip()
         psi_0 = None
-        preset_psi = self.PRESETS[5]["psi"].strip()
+        preset_psi = t("preset.5.psi").strip()
         if raw_psi:
-            # If user left the 2-level preset untouched with an N!=2 matrix, treat as no state vector provided
             if raw_psi == preset_psi and H.shape[0] != 2:
                 psi_0 = None
             else:
@@ -790,7 +973,6 @@ class CalculadoraCuanticaAvanzada:
                 except Exception as e:
                     raise ValueError(f"Vector de estado inicial inválido: {e}")
 
-        # Parse time t if given in lim_a
         t_val = 0.0
         t_str = self.entry_lim_a.get().strip()
         if t_str:
@@ -803,6 +985,8 @@ class CalculadoraCuanticaAvanzada:
                 raise ValueError(f"Valor de tiempo 't' inválido en Límite a: {e}")
 
         res = analizar_hamiltoniano_matricial(H, psi_0=psi_0, t_val=t_val)
+        self._ultimo_resultado = res
+        self._ultimo_modo = 5
         bloques = formatear_hamiltoniano(res)
         self._escribir_bloques(bloques)
 

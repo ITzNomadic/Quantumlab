@@ -18,7 +18,9 @@ class ParseSecurityError(ValueError):
 class SafeASTParser:
     MAX_LENGTH = 500
     MAX_DEPTH = 25
+    MAX_NODES = 100
     MAX_POWER = 100
+    MAX_INT_DIGITS = 100
 
     ALLOWED_FUNCS = {
         "sin": sp.sin,
@@ -109,6 +111,12 @@ class SafeASTParser:
         except SyntaxError as e:
             raise ParseSecurityError(f"Error de sintaxis matemática: {e.msg}") from e
 
+        node_count = sum(1 for _ in ast.walk(tree))
+        if node_count > cls.MAX_NODES:
+            raise ParseSecurityError(
+                f"La expresión es demasiado compleja: contiene {node_count} nodos AST (límite: {cls.MAX_NODES})."
+            )
+
         symbols = dict(cls.ALLOWED_SYMBOLS)
         if custom_symbols:
             symbols.update(custom_symbols)
@@ -120,6 +128,20 @@ class SafeASTParser:
     def _validate_and_check_depth(cls, node: ast.AST, depth: int):
         if depth > cls.MAX_DEPTH:
             raise ParseSecurityError("La expresión es demasiado compleja (profundidad anidada excesiva).")
+
+        # Nested power rejection: e.g. x**y**z or (x**y)**z
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
+            if isinstance(node.left, ast.BinOp) and isinstance(node.left.op, ast.Pow):
+                raise ParseSecurityError("Potencias anidadas excesivas detectadas en la expresión.")
+            if isinstance(node.right, ast.BinOp) and isinstance(node.right.op, ast.Pow):
+                raise ParseSecurityError("Potencias anidadas excesivas detectadas en la expresión.")
+
+        # Large integer digit limit
+        if isinstance(node, ast.Constant) and isinstance(node.value, int) and not isinstance(node.value, bool):
+            if len(str(abs(node.value))) > cls.MAX_INT_DIGITS:
+                raise ParseSecurityError(
+                    f"Número entero excede el límite seguro de {cls.MAX_INT_DIGITS} dígitos."
+                )
 
         # Disallow attribute access, imports, lambdas, subscripts, comprehensions, etc.
         disallowed_types = (
@@ -237,10 +259,15 @@ def parse_parameters(text: str) -> dict:
         try:
             # Try float or int
             if "." in cleaned_val or "e" in cleaned_val.lower():
-                params[key] = float(cleaned_val)
+                val_num = float(cleaned_val)
+                if key == "n" and not val_num.is_integer():
+                    raise ValueError(f"El número cuántico 'n' no puede ser fraccionario: {cleaned_val}")
+                params[key] = int(val_num) if (key == "n" and val_num.is_integer()) else val_num
             else:
                 params[key] = int(cleaned_val)
-        except ValueError:
+        except ValueError as e:
+            if key == "n" and "fraccionario" in str(e):
+                raise
             try:
                 # Try sympy expression
                 params[key] = SafeASTParser.parse(cleaned_val)

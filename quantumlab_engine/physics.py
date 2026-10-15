@@ -41,6 +41,7 @@ class WaveFunctionResult:
     heisenberg_nota: str
     es_autoadjunto_p: bool
     frontera_nota: str
+    heisenberg_codigo: str = "fulfilled"
 
 
 @dataclass
@@ -125,6 +126,24 @@ def analizar_funcion_onda(psi_raw: sp.Expr, a: sp.Expr, b: sp.Expr) -> WaveFunct
     if psi_raw == 0 or psi_raw.is_zero:
         raise ValueError("El estado cuántico no puede ser la función nula (ψ = 0). La norma sería cero.")
 
+    # Rapid asymptotic divergence check for unbounded wave functions on infinite domains
+    if a == -sp.oo:
+        try:
+            lim_neg = sp.limit(sp.Abs(psi_raw), x, -sp.oo)
+            if lim_neg in (sp.oo, -sp.oo, sp.zoo):
+                raise ValueError("La función de onda diverge hacia infinito cuando x -> -oo; no es normalizable en L².")
+        except Exception as e:
+            if "diverge hacia infinito" in str(e):
+                raise
+    if b == sp.oo:
+        try:
+            lim_pos = sp.limit(sp.Abs(psi_raw), x, sp.oo)
+            if lim_pos in (sp.oo, -sp.oo, sp.zoo):
+                raise ValueError("La función de onda diverge hacia infinito cuando x -> +oo; no es normalizable en L².")
+        except Exception as e:
+            if "diverge hacia infinito" in str(e):
+                raise
+
     # Compute norm integral
     densidad = sp.simplify(sp.conjugate(psi_raw) * psi_raw)
     norm_integral = sp.integrate(densidad, (x, a, b))
@@ -179,9 +198,11 @@ def analizar_funcion_onda(psi_raw: sp.Expr, a: sp.Expr, b: sp.Expr) -> WaveFunct
     # Check if delta_p is 0, NaN, or non-verifiable
     heisenberg_cumple = False
     heisenberg_nota = ""
+    heisenberg_codigo = "indeterminate"
 
     if delta_p == 0 or delta_x == 0:
         heisenberg_cumple = False
+        heisenberg_codigo = "zero_dispersion"
         heisenberg_nota = (
             "NO VERIFICABLE / DISPERSIÓN NULA: Uno de los desvíos calculados formalmente es cero "
             "(Δp = 0 o Δx = 0). En un dominio finito, p̂ no posee autovectores en el dominio autoadjunto, "
@@ -189,6 +210,7 @@ def analizar_funcion_onda(psi_raw: sp.Expr, a: sp.Expr, b: sp.Expr) -> WaveFunct
         )
     elif not es_autoadjunto_p and (a != -sp.oo or b != sp.oo):
         heisenberg_cumple = False
+        heisenberg_codigo = "open_boundary"
         heisenberg_nota = (
             "CONDICIONES DE CONTORNO NO ESTÁNDAR: El principio canónico Δx·Δp ≥ ℏ/2 presupone autoadjunción "
             "en toda la recta ℝ o condiciones de frontera periódicas. En un intervalo acotado con frontera abierta, "
@@ -200,18 +222,22 @@ def analizar_funcion_onda(psi_raw: sp.Expr, a: sp.Expr, b: sp.Expr) -> WaveFunct
         try:
             if diferencia.is_nonnegative is True or (diferencia.is_number and float(diferencia.evalf()) >= -1e-12):
                 heisenberg_cumple = True
+                heisenberg_codigo = "fulfilled"
                 heisenberg_nota = "El estado satisface rigurosamente el Principio de Incertidumbre de Heisenberg: Δx·Δp ≥ ℏ/2."
             elif diferencia.is_negative is True or (diferencia.is_number and float(diferencia.evalf()) < -1e-12):
                 heisenberg_cumple = False
+                heisenberg_codigo = "violated"
                 heisenberg_nota = "El producto de incertidumbres formal viola la cota ℏ/2 debido a las condiciones de frontera o dominio."
             else:
                 heisenberg_cumple = False
+                heisenberg_codigo = "indeterminate"
                 heisenberg_nota = (
                     "INDETERMINADO: No se pudo demostrar formalmente la desigualdad canónica Δx·Δp ≥ ℏ/2 "
                     "con las hipótesis simbólicas actuales."
                 )
         except Exception:
             heisenberg_cumple = False
+            heisenberg_codigo = "indeterminate"
             heisenberg_nota = (
                 "INDETERMINADO: No se pudo evaluar formalmente la desigualdad canónica Δx·Δp ≥ ℏ/2 "
                 "para este estado."
@@ -227,7 +253,8 @@ def analizar_funcion_onda(psi_raw: sp.Expr, a: sp.Expr, b: sp.Expr) -> WaveFunct
         heisenberg_cumple=heisenberg_cumple,
         heisenberg_nota=heisenberg_nota,
         es_autoadjunto_p=es_autoadjunto_p,
-        frontera_nota=frontera_nota
+        frontera_nota=frontera_nota,
+        heisenberg_codigo=heisenberg_codigo
     )
 
 
@@ -307,41 +334,73 @@ def analizar_pozo_infinito(a: sp.Expr, b: sp.Expr, n_val: int = 1, L_val: sp.Exp
     x = SafeASTParser.x
     hbar = SafeASTParser.hbar
     m = SafeASTParser.m
-    L = L_val if L_val is not None else SafeASTParser.L
 
-    # QL-010: Validate n positive integer
+    # QL-010: Validate n positive integer, rejecting fractional inputs
+    if isinstance(n_val, float):
+        if not n_val.is_integer():
+            raise ValueError(f"El número cuántico 'n' no puede ser fraccionario ({n_val}). Ingrese un entero válido.")
+        n_val = int(n_val)
+
     if not isinstance(n_val, int) or n_val < 1:
         raise ValueError(f"El número cuántico 'n' debe ser un entero estrictamente positivo (n = 1, 2, 3...); recibido: {n_val}")
 
-    # QL-009: Check a <= b
+    # Process L_val
+    if L_val is not None:
+        if isinstance(L_val, (int, float)):
+            if L_val <= 0:
+                raise ValueError(f"El ancho del pozo 'L' debe ser un número real estrictamente positivo (L > 0); recibido: {L_val}")
+            L_num = float(L_val)
+            L = sp.Float(L_val) if isinstance(L_val, float) else sp.Integer(L_val)
+        elif isinstance(L_val, sp.Expr):
+            try:
+                L_num = float(L_val.evalf())
+                if L_num <= 0:
+                    raise ValueError(f"El ancho del pozo 'L' debe ser un número real estrictamente positivo (L > 0); recibido: {L_num}")
+            except (TypeError, ValueError) as err:
+                if "estrictamente positivo" in str(err):
+                    raise
+                L_num = 1.0
+            L = L_val
+        else:
+            try:
+                L_num = float(L_val)
+                if L_num <= 0:
+                    raise ValueError(f"El ancho del pozo 'L' debe ser un número real estrictamente positivo (L > 0); recibido: {L_val}")
+                L = sp.sympify(L_val)
+            except Exception as err:
+                if "estrictamente positivo" in str(err):
+                    raise
+                L = SafeASTParser.L
+                L_num = 1.0
+    else:
+        L = SafeASTParser.L
+        L_num = 1.0
+
+    # QL-009: Check a <= b with respect to L_num
     try:
-        a_f = float(a.subs(L, 1.0).evalf())
-        b_f = float(b.subs(L, 1.0).evalf())
+        a_f = float(a.subs(SafeASTParser.L, L_num).subs(L, L_num).evalf())
+        b_f = float(b.subs(SafeASTParser.L, L_num).subs(L, L_num).evalf())
         if a_f > b_f:
             raise ValueError(f"Límite inferior a={a} es estrictamente mayor que el límite superior b={b} (a > b produce probabilidades inválidas).")
     except ValueError:
         raise
     except Exception:
-        pass
+        a_f, b_f = 0.0, L_num
 
     # QL-008: Physical domain is strictly [0, L] where density is (2/L)*sin^2(n*pi*x/L), and 0 outside.
     # Restrict integration to intersection [max(0, a), min(L, b)]
+    eff_a = max(0.0, a_f)
+    eff_b = min(L_num, b_f)
+
     nota_dominio = ""
-    try:
-        a_f = float(a.subs(L, 1.0).evalf())
-        b_f = float(b.subs(L, 1.0).evalf())
-        L_f = 1.0
+    if a_f < 0.0 or b_f > L_num:
+        nota_dominio = (
+            f"ACUMULACIÓN FÍSICA: El pozo infinito tiene paredes impenetrables en x=0 y x=L. "
+            f"La densidad de probabilidad es estrictamente 0 fuera de [0, L]. "
+            f"La integral sobre [{a}, {b}] se evalúa eficazmente en la intersección con el pozo."
+        )
 
-        if a_f < 0 or b_f > L_f:
-            nota_dominio = (
-                f"ACUMULACIÓN FÍSICA: El pozo infinito tiene paredes impenetrables en x=0 y x=L. "
-                f"La densidad de probabilidad es estrictamente 0 fuera de [0, L]. "
-                f"La integral sobre [{a}, {b}] se evalúa eficazmente en la intersección con el pozo."
-            )
-    except Exception:
-        pass
-
-    # Normalized eigenstate and energy formula
+    # Normalized eigenstate and energy formula with L
     psi_n = sp.sqrt(2 / L) * sp.sin(n_val * sp.pi * x / L)
     energia_n = (n_val**2 * sp.pi**2 * hbar**2) / (2 * m * L**2)
 
@@ -355,30 +414,19 @@ def analizar_pozo_infinito(a: sp.Expr, b: sp.Expr, n_val: int = 1, L_val: sp.Exp
     prob_simbolica = sp.integrate(densidad_caja, (x, a, b))
 
     # Calculate exact clamped numerical probability
-    try:
-        a_num = float(a.subs(L, 1.0).evalf())
-        b_num = float(b.subs(L, 1.0).evalf())
-        eff_a = max(0.0, a_num)
-        eff_b = min(1.0, b_num)
+    if eff_a >= eff_b:
+        prob_numerica = 0.0
+    else:
+        # Analytic integral of (2/L)*sin^2(n*pi*x/L): (x/L) - sin(2*n*pi*x/L)/(2*n*pi)
+        def int_sin2_box(u):
+            return (u / L_num) - np.sin(2.0 * n_val * np.pi * u / L_num) / (2.0 * n_val * np.pi)
 
-        if eff_a >= eff_b:
-            prob_numerica = 0.0
-        else:
-            # Analytic integral of sin^2(n*pi*u): 0.5 * (u - sin(2*n*pi*u)/(2*n*pi)) * 2
-            def int_sin2(u):
-                return u - np.sin(2 * n_val * np.pi * u) / (2 * n_val * np.pi)
-
-            prob_numerica = float(int_sin2(eff_b) - int_sin2(eff_a))
-            prob_numerica = max(0.0, min(1.0, prob_numerica))
-    except Exception:
-        try:
-            prob_numerica = max(0.0, min(1.0, float(prob_simbolica.subs(L, 1.0).evalf())))
-        except Exception:
-            prob_numerica = 0.0
+        prob_numerica = float(int_sin2_box(eff_b) - int_sin2_box(eff_a))
+        prob_numerica = max(0.0, min(1.0, prob_numerica))
 
     return InfiniteWellResult(
         n=n_val, L=L, a_in=a, b_in=b,
-        a_eff=a, b_eff=b,
+        a_eff=sp.sympify(eff_a), b_eff=sp.sympify(eff_b),
         prob_simbolica=prob_simbolica,
         prob_numerica=prob_numerica,
         psi_n=psi_n, energia_n=energia_n,
@@ -394,6 +442,11 @@ def analizar_oscilador_armonico(n_val: int = 0) -> HarmonicOscillatorResult:
     hbar = SafeASTParser.hbar
     m = SafeASTParser.m
     w = SafeASTParser.w
+
+    if isinstance(n_val, float):
+        if not n_val.is_integer():
+            raise ValueError(f"El nivel cuántico 'n' del oscilador armónico no puede ser fraccionario ({n_val}). Ingrese un entero válido.")
+        n_val = int(n_val)
 
     if not isinstance(n_val, int) or n_val < 0:
         raise ValueError(f"El nivel cuántico 'n' del oscilador armónico debe ser un entero no negativo (n = 0, 1, 2...); recibido: {n_val}")

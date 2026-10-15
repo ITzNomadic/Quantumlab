@@ -1,21 +1,22 @@
 # QuantumLab ⚛️
 
-**QuantumLab** is an educational desktop quantum mechanics calculator, written in Python with Tkinter, SymPy and NumPy. Its dark-themed interface combines symbolic calculations with step-by-step, human-readable explanations. The interface and mathematical engine are currently presented in Spanish.
+**QuantumLab** is an educational desktop quantum mechanics laboratory and calculator, written in Python with Tkinter, SymPy, and NumPy. Its dark-themed workspace combines symbolic analytical derivations with step-by-step, human-readable educational explanations. Featuring complete bilingual internationalization (English & Spanish) with real-time switching, robust scientific invariants, and an AST-sandboxed parser.
 
-> **Status: early public release.** Intended for exploration and education, not as a substitute for validated scientific software. See [Known limitations](#known-limitations).
+> **Version: v0.3.0.** Full internationalization (English & Spanish), verified scientific rigor, AST security limits, and automated CI testing. See [Known limitations](#known-limitations).
 
 ![QuantumLab desktop interface](docs/quantumlab-preview.png)
 
 ## Features
 
-- **Wave function analysis:** normalization, expected position and momentum, kinetic energy, boundary term self-adjointness checks, and rigorous Heisenberg uncertainty verification.
-- **1D time-independent Schrödinger equation:** applies the Hamiltonian, verifies residual $H\psi - E\psi = 0$, and distinguishes formal local solutions from normalizable $L^2(\mathbb{R})$ physical bound states.
-- **Infinite square well:** displays quantized energy formulas, respects quantum number $n \ge 1$, clamps integration strictly to the physical domain $[0, L]$, and computes exact probabilities.
-- **Quantum harmonic oscillator:** computes exact normalized Hermite wave functions and quantized energies $E_n = \hbar\omega(n + 1/2)$ for any level $n \ge 0$.
-- **Quantum tunneling:** calculates reflection and transmission through a rectangular barrier across all energy regimes ($E < V_0$, $E = V_0$, $E > V_0$, $a=0$, $E=0$) with user-defined parameters, stable asymptotic evaluations for thick barriers, and exact conservation of probability current ($T + R = 1$).
-- **Matrix Hamiltonians & Time Evolution:** identifies exact vs. numerical Hermiticity, computes eigenvalues and eigenvectors (preserving full complex eigenvalues for non-Hermitian systems), calculates true excitation gaps for degenerate spectra, and computes unitary time evolution $|\psi(t)\rangle = \exp(-iHt/\hbar)|\psi(0)\rangle$.
-- **Secure Sandboxed Parser:** custom AST mathematical parser (`SafeASTParser`) preventing code execution while supporting rich symbolic functions and constants.
-- **Results workspace:** formatted steps, symbolic keypad, responsive layout, persistent inputs per mode, and robust export to UTF-8 `.txt` file.
+- **Full Bilingual Internationalization:** Permanent top-right header `Language` selector supporting English (`en`) and Spanish (`es`) with dynamic real-time updates and zero residual leaks.
+- **Wave function analysis:** Normalization, expected position and momentum, kinetic energy, boundary term self-adjointness checks, and rigorous Heisenberg uncertainty verification.
+- **1D time-independent Schrödinger equation:** Applies the Hamiltonian, verifies residual $H\psi - E\psi = 0$, and distinguishes formal local solutions from normalizable $L^2(\mathbb{R})$ physical bound states.
+- **Infinite square well:** Displays quantized energy formulas, parses width $L$, respects quantum number $n \ge 1$ (rejecting fractional numbers), clamps integration strictly to the physical domain $[0, L]$, and computes exact probabilities.
+- **Quantum harmonic oscillator:** Computes exact normalized Hermite wave functions and quantized energies $E_n = \hbar\omega(n + 1/2)$ for any level $n \ge 0$.
+- **Quantum tunneling:** Calculates reflection and transmission through a rectangular barrier across all energy regimes ($E < V_0$, $E = V_0$, $E > V_0$, $a=0$, $E=0$) with user-defined parameters, stable asymptotic evaluations for thick barriers, and exact conservation of probability current ($T + R = 1$).
+- **Matrix Hamiltonians & Time Evolution:** Identifies exact vs. numerical Hermiticity, computes eigenvalues and eigenvectors (preserving full complex eigenvalues for non-Hermitian dissipative/open models), calculates true excitation gaps for degenerate spectra, and computes time evolution $|\psi(t)\rangle = \exp(-iHt/\hbar)|\psi(0)\rangle$ without external dependencies.
+- **Secure Sandboxed Parser:** Custom AST mathematical parser (`SafeASTParser`) preventing code execution, limiting node count (max 100), rejecting nested powers, and limiting integer digits (>100 digits).
+- **Results workspace:** Formatted steps, symbolic keypad, responsive layout, persistent inputs per mode, instant re-rendering upon language toggle without recalculating, and robust export to UTF-8 `.txt` file.
 
 ## Installation
 

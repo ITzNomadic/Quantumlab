@@ -2,6 +2,32 @@
 
 All notable changes to this project will be recorded here.
 
+## [0.3.0] - 2026-10-15
+
+### Added (Internationalization & Real-time Language Switch)
+- **Full Bilingual Architecture (`quantumlab_i18n`)**: Exhaustive English (`en`) and Spanish (`es`) localization dictionaries with 249 translation keys each (100% parity, 0 missing keys).
+- **Zero Residual Language Leaks**: Fully localized interface and scientific output engines. English mode contains zero residual Spanish strings.
+- **Permanent Header `Language` Selector**: Dedicated language combobox permanently positioned in the top-right header, visible across all 6 calculation modules with the invariable label `Language` and options `English` and `Spanish`. Fully keyboard accessible.
+- **Dynamic Non-Destructive Switching**: Instant language switching without restarting the application, preserving entered formulas, active parameters, window geometry, and active mode.
+- **Zero-Recalculation Re-Rendering**: Switching languages immediately re-renders active calculation sheets using stored structured physics dataclasses without requiring costly re-calculation.
+- **Persistent Preferences**: Language preference automatically saved and loaded from `~/.quantumlab/config.json`.
+
+### Enhanced (Scientific Robustness & Safety)
+- **Infinite Potential Well Width ($L$) Parameter**: Fully parsed and validated from the parameters entry field ($L > 0$). Accurately scales eigenenergies $E_n = \frac{n^2\pi^2\hbar^2}{2mL^2}$, eigenstate formulas $\psi_n(x) = \sqrt{2/L}\sin(n\pi x/L)$, and restricts probability integrals to $[0, L]$.
+- **Strict Quantum Number Validation**: Rejects fractional inputs (e.g. $n = 1.5$) with informative error messages across the infinite well and harmonic oscillator engines, eliminating silent `int()` truncation.
+- **AST Parser Hardening**:
+  - Rejection of nested powers (e.g. `x**y**z`, `(x**2)**3`) to prevent exponential computational complexity.
+  - Large integer limit (>100 digits) rejecting arbitrarily large numerical constants.
+  - Total AST node count limit (max 100 nodes) to thwart complexity attacks.
+- **Rapid Asymptotic Divergence Check**: Immediate evaluation of $\lim_{x \to \pm\infty} |\psi(x)|$ on infinite intervals, rejecting unbounded non-normalizable states before invoking expensive symbolic integration.
+- **Windows GDI Artifact Elimination**: Resolved the `"ca calculando"` visual rendering ghosting artifact by anchoring the calculation status label with `width=26, anchor="e"`.
+- **Python 3.14 PyInstaller Compatibility**: Guarded import and hidden import bundling for standard library module `_pylong`.
+
+### Tests
+- Added `tests/test_i18n.py`: Key parity, non-empty values, 100% English purity tests across all 6 modules, 100% Spanish integrity, permanent `Language` label invariance, non-destructive dynamic switching, and preference persistence.
+- Added `tests/test_scientific_v030.py`: $L$ parameter scaling and domain support, fractional quantum number rejection, AST safety limits, and asymptotic divergence checks.
+- Test suite expanded to 88 automated tests passing at 100%.
+
 ## [0.2.1] - 2026-10-15
 
 ### Fixed (Residual Audit Remediation)
