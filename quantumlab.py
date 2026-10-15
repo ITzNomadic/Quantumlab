@@ -9,14 +9,16 @@ import sympy as sp
 import numpy as np
 
 from quantumlab_i18n import get_i18n, t
-from quantumlab_engine.parser import (
-    SafeASTParser,
+from quantumlab_engine import (
+    QuantumLabError,
+    MathParseError,
     ParseSecurityError,
+    ScientificValidationError,
+    AsyncCalculationManager,
+    SafeASTParser,
     parse_parameters,
     parse_matrix,
     parse_state_vector,
-)
-from quantumlab_engine.physics import (
     analizar_funcion_onda,
     analizar_schrodinger_1d,
     analizar_pozo_infinito,
@@ -82,6 +84,8 @@ class CalculadoraCuanticaAvanzada:
         self._modo_actual = 0
         self._ultimo_resultado = None
         self._ultimo_modo = None
+        self.historial_calculos = []  # DEF-03: Multi-step calculation history
+        self.calc_manager = AsyncCalculationManager(self.root)  # DEF-09: Responsive execution watchdog
 
         # Persistent inputs per mode so clicking modes does not erase user inputs
         self._inputs_por_modo = {
@@ -238,17 +242,60 @@ class CalculadoraCuanticaAvanzada:
         new_lang = "en" if val == "English" else "es"
         self._cambiar_idioma(new_lang)
 
+    def _es_preset(self, modo: int, campo: str, valor: str) -> bool:
+        """
+        DEF-02: Determines whether a field contains an application-generated preset in any language.
+        Separates scientific math data from localized descriptive text to prevent overwriting user work.
+        """
+        if not valor:
+            return True
+        v = valor.strip()
+        val_es = t(f"preset.{modo}.{campo}", lang="es").strip()
+        val_en = t(f"preset.{modo}.{campo}", lang="en").strip()
+        return v in (val_es, val_en)
+
     def _cambiar_idioma(self, new_lang: str):
         if self.i18n.current_language == new_lang:
             return
+
+        # Save current user inputs before switching
+        self._guardar_entradas_actuales()
+
         self.i18n.set_language(new_lang)
         self.combo_lang.set("English" if new_lang == "en" else "Spanish")
+
+        # DEF-02: Update descriptive presets across all modules without touching user-custom entries
+        for m in range(6):
+            if m in self._inputs_por_modo:
+                for campo in ("psi", "potencial", "lim_a", "lim_b", "params"):
+                    val = self._inputs_por_modo[m][campo]
+                    if self._es_preset(m, campo, val):
+                        self._inputs_por_modo[m][campo] = t(f"preset.{m}.{campo}", lang=new_lang)
+
+        # Update currently active mode entries if they contain unmodified presets
+        active_data = self._inputs_por_modo[self._modo_actual]
+        if self._es_preset(self._modo_actual, "psi", self.entry_psi.get()):
+            self.entry_psi.delete(0, tk.END)
+            self.entry_psi.insert(0, active_data["psi"])
+        if self._es_preset(self._modo_actual, "potencial", self.entry_potencial.get()):
+            self.entry_potencial.delete(0, tk.END)
+            self.entry_potencial.insert(0, active_data["potencial"])
+        if self._es_preset(self._modo_actual, "lim_a", self.entry_lim_a.get()):
+            self.entry_lim_a.delete(0, tk.END)
+            self.entry_lim_a.insert(0, active_data["lim_a"])
+        if self._es_preset(self._modo_actual, "lim_b", self.entry_lim_b.get()):
+            self.entry_lim_b.delete(0, tk.END)
+            self.entry_lim_b.insert(0, active_data["lim_b"])
+        if self._es_preset(self._modo_actual, "params", self.entry_params.get()):
+            self.entry_params.delete(0, tk.END)
+            self.entry_params.insert(0, active_data["params"])
+
         self._actualizar_textos_ui()
 
     def _actualizar_textos_ui(self):
         """
         Dynamically updates all UI texts to the currently active language.
-        Preserves user inputs, current mode, window layout, and re-renders existing calculation.
+        Preserves user inputs, current mode, window layout, and re-renders calculation history.
         """
         # Window & header
         self.root.title(t("app.title"))
@@ -311,24 +358,49 @@ class CalculadoraCuanticaAvanzada:
         self.lbl_footer_brand.config(text=t("footer.brand"))
         self.lbl_footer_security.config(text=t("footer.security"))
 
-        # If results exist, re-render immediately in the new language without recalculating
-        if self._ultimo_resultado is not None and self._ultimo_modo is not None:
+        # DEF-03: Re-render entire calculation history in the active language without losing multi-step records
+        new_lang = self.i18n.current_language
+        if self.historial_calculos:
+            self.hoja.delete("1.0", tk.END)
+            self.estado_vacio.place_forget()
+            for item in self.historial_calculos:
+                modo = item["modo"]
+                res = item["resultado"]
+                if modo == 0:
+                    bloques = formatear_analisis_onda(res, lang=new_lang)
+                elif modo == 1:
+                    bloques = formatear_schrodinger(res, lang=new_lang)
+                elif modo == 2:
+                    bloques = formatear_pozo_infinito(res, lang=new_lang)
+                elif modo == 3:
+                    bloques = formatear_oscilador(res, lang=new_lang)
+                elif modo == 4:
+                    bloques = formatear_tunel(res, lang=new_lang)
+                elif modo == 5:
+                    bloques = formatear_hamiltoniano(res, lang=new_lang)
+                else:
+                    bloques = []
+
+                self._escribir_bloques(bloques)
+                self._escribir("═" * 68, "separador")
+            self.etiqueta_estado.config(text=t("status.available"), fg=self.C["success"])
+        elif self._ultimo_resultado is not None and self._ultimo_modo is not None:
             self.hoja.delete("1.0", tk.END)
             self.estado_vacio.place_forget()
             modo = self._ultimo_modo
             res = self._ultimo_resultado
             if modo == 0:
-                bloques = formatear_analisis_onda(res)
+                bloques = formatear_analisis_onda(res, lang=new_lang)
             elif modo == 1:
-                bloques = formatear_schrodinger(res)
+                bloques = formatear_schrodinger(res, lang=new_lang)
             elif modo == 2:
-                bloques = formatear_pozo_infinito(res)
+                bloques = formatear_pozo_infinito(res, lang=new_lang)
             elif modo == 3:
-                bloques = formatear_oscilador(res)
+                bloques = formatear_oscilador(res, lang=new_lang)
             elif modo == 4:
-                bloques = formatear_tunel(res)
+                bloques = formatear_tunel(res, lang=new_lang)
             elif modo == 5:
-                bloques = formatear_hamiltoniano(res)
+                bloques = formatear_hamiltoniano(res, lang=new_lang)
             else:
                 bloques = []
 
@@ -447,14 +519,15 @@ class CalculadoraCuanticaAvanzada:
         self._actualizar_visual_modo()
         self.canvas_entrada.yview_moveto(0)
 
-    def restablecer_preset_actual(self):
+    def restablecer_preset_actual(self, mostrar_dialogo: bool = True):
         """Explicitly reloads the default preset for the current mode."""
         self._cargar_modo(self._modo_actual, forzar_preset=True)
         self._guardar_entradas_actuales()
-        messagebox.showinfo(
-            t("dialog.preset_restored_title"),
-            t("dialog.preset_restored_msg", name=t(f"module.{self._modo_actual}.name")),
-        )
+        if mostrar_dialogo:
+            messagebox.showinfo(
+                t("dialog.preset_restored_title"),
+                t("dialog.preset_restored_msg", name=t(f"module.{self._modo_actual}.name")),
+            )
 
     def _cargar_preset_ejemplo(self):
         """Backward-compatibility wrapper for test suites and presets."""
@@ -819,6 +892,7 @@ class CalculadoraCuanticaAvanzada:
 
     def limpiar_hoja(self):
         self.hoja.delete("1.0", tk.END)
+        self.historial_calculos.clear()
         self._ultimo_resultado = None
         self._ultimo_modo = None
         self.estado_vacio.place(relx=0.5, rely=0.45, anchor="center")
@@ -859,8 +933,22 @@ class CalculadoraCuanticaAvanzada:
     # =========================================================
     # MOTOR DE RESOLUCIÓN Y DESPACHO
     # =========================================================
+    def _registrar_calculo(self, modo: int, res: Any, bloques: list):
+        """
+        DEF-03: Registers a structured calculation in history for non-destructive re-rendering.
+        """
+        import time
+        self._ultimo_resultado = res
+        self._ultimo_modo = modo
+        self.historial_calculos.append({
+            "modo": modo,
+            "resultado": res,
+            "timestamp": time.strftime("%H:%M:%S")
+        })
+        self._escribir_bloques(bloques)
+
     def resolver_ecuacion(self):
-        """Handles calculation with accurate status updates without false claims."""
+        """Handles calculation with accurate status updates and localized error handling."""
         modo = self.combo_modo.current()
         self.etiqueta_estado.config(text=t("status.calculating"), fg=self.C["warning"])
         self.root.update_idletasks()
@@ -882,15 +970,29 @@ class CalculadoraCuanticaAvanzada:
             self._escribir("═" * 68, "separador")
             self.etiqueta_estado.config(text=t("status.available"), fg=self.C["success"])
 
-        except ParseSecurityError as e:
-            self.etiqueta_estado.config(text=t("status.syntax_error"), fg=self.C["warning"])
-            messagebox.showerror(t("dialog.error_syntax_title"), str(e))
-        except ValueError as e:
+        except Exception as e:
+            self._manejar_error_calculo(e)
+
+    def _manejar_error_calculo(self, e: Exception):
+        """DEF-01: Centralized error handler displaying 100% localized messages in the active language."""
+        curr_lang = self.i18n.current_language
+        if isinstance(e, QuantumLabError):
+            msg = e.to_localized(curr_lang)
+            if isinstance(e, (ParseSecurityError, MathParseError)):
+                self.etiqueta_estado.config(text=t("status.syntax_error"), fg=self.C["warning"])
+                messagebox.showerror(t("dialog.error_syntax_title"), msg)
+            elif isinstance(e, ScientificValidationError):
+                self.etiqueta_estado.config(text=t("status.param_error"), fg=self.C["warning"])
+                messagebox.showerror(t("dialog.error_param_title"), msg)
+            else:
+                self.etiqueta_estado.config(text=t("status.calc_error"), fg=self.C["warning"])
+                messagebox.showerror(t("dialog.error_calc_title"), msg)
+        elif isinstance(e, ValueError):
             self.etiqueta_estado.config(text=t("status.param_error"), fg=self.C["warning"])
             messagebox.showerror(t("dialog.error_param_title"), str(e))
-        except Exception as e:
+        else:
             self.etiqueta_estado.config(text=t("status.calc_error"), fg=self.C["warning"])
-            messagebox.showerror(t("dialog.error_calc_title"), t("dialog.error_calc_prefix") + str(e))
+            messagebox.showerror(t("dialog.error_calc_title"), f"{t('dialog.error_calc_prefix')} {e}")
 
     # =========================================================
     # RESOLUTORES POR MODALIDAD
@@ -901,10 +1003,9 @@ class CalculadoraCuanticaAvanzada:
         b = self._parsear_expresion(self.entry_lim_b.get())
 
         res = analizar_funcion_onda(psi_raw, a, b)
-        self._ultimo_resultado = res
-        self._ultimo_modo = 0
-        bloques = formatear_analisis_onda(res)
-        self._escribir_bloques(bloques)
+        bloques = formatear_analisis_onda(res, lang=self.i18n.current_language)
+        self._registrar_calculo(0, res, bloques)
+        return res
 
     def _resolver_schrodinger_simbolico(self):
         psi = self._parsear_expresion(self.entry_psi.get())
@@ -916,10 +1017,9 @@ class CalculadoraCuanticaAvanzada:
         b = self._parsear_expresion(b_str) if b_str else None
 
         res = analizar_schrodinger_1d(psi, V, a=a, b=b)
-        self._ultimo_resultado = res
-        self._ultimo_modo = 1
-        bloques = formatear_schrodinger(res)
-        self._escribir_bloques(bloques)
+        bloques = formatear_schrodinger(res, lang=self.i18n.current_language)
+        self._registrar_calculo(1, res, bloques)
+        return res
 
     def _resolver_pozo_infinito(self):
         a = self._parsear_expresion(self.entry_lim_a.get())
@@ -930,20 +1030,18 @@ class CalculadoraCuanticaAvanzada:
         L_val = params.get("L", None)
 
         res = analizar_pozo_infinito(a, b, n_val=n_val, L_val=L_val)
-        self._ultimo_resultado = res
-        self._ultimo_modo = 2
-        bloques = formatear_pozo_infinito(res)
-        self._escribir_bloques(bloques)
+        bloques = formatear_pozo_infinito(res, lang=self.i18n.current_language)
+        self._registrar_calculo(2, res, bloques)
+        return res
 
     def _resolver_oscilador_armonico(self):
         params = parse_parameters(self.entry_params.get())
         n_val = params.get("n", 0)
 
         res = analizar_oscilador_armonico(n_val=n_val)
-        self._ultimo_resultado = res
-        self._ultimo_modo = 3
-        bloques = formatear_oscilador(res)
-        self._escribir_bloques(bloques)
+        bloques = formatear_oscilador(res, lang=self.i18n.current_language)
+        self._registrar_calculo(3, res, bloques)
+        return res
 
     def _resolver_efecto_tunel(self):
         params = parse_parameters(self.entry_params.get())
@@ -952,10 +1050,9 @@ class CalculadoraCuanticaAvanzada:
         ancho_nm = float(params.get("a", 0.5))
 
         res = analizar_efecto_tunel(E_ev=E_ev, V0_ev=V0_ev, ancho_nm=ancho_nm)
-        self._ultimo_resultado = res
-        self._ultimo_modo = 4
-        bloques = formatear_tunel(res)
-        self._escribir_bloques(bloques)
+        bloques = formatear_tunel(res, lang=self.i18n.current_language)
+        self._registrar_calculo(4, res, bloques)
+        return res
 
     def _resolver_hamiltoniano_matricial(self):
         raw_matrix = self.entry_params.get().strip()
@@ -963,15 +1060,16 @@ class CalculadoraCuanticaAvanzada:
 
         raw_psi = self.entry_psi.get().strip()
         psi_0 = None
-        preset_psi = t("preset.5.psi").strip()
+        preset_psi_es = t("preset.5.psi", lang="es").strip()
+        preset_psi_en = t("preset.5.psi", lang="en").strip()
         if raw_psi:
-            if raw_psi == preset_psi and H.shape[0] != 2:
+            if (raw_psi == preset_psi_es or raw_psi == preset_psi_en) and H.shape[0] != 2:
                 psi_0 = None
             else:
                 try:
                     psi_0 = parse_state_vector(raw_psi, expected_dim=H.shape[0])
                 except Exception as e:
-                    raise ValueError(f"Vector de estado inicial inválido: {e}")
+                    raise ScientificValidationError("error.state_vector_invalid", detail=str(e))
 
         t_val = 0.0
         t_str = self.entry_lim_a.get().strip()
@@ -980,15 +1078,14 @@ class CalculadoraCuanticaAvanzada:
                 t_sym = self._parsear_expresion(t_str)
                 t_val = float(t_sym.evalf())
                 if not np.isfinite(t_val):
-                    raise ValueError("El tiempo 't' debe ser un número real finito.")
+                    raise ScientificValidationError("error.time_must_be_finite")
             except Exception as e:
-                raise ValueError(f"Valor de tiempo 't' inválido en Límite a: {e}")
+                raise ScientificValidationError("error.time_invalid", detail=str(e))
 
         res = analizar_hamiltoniano_matricial(H, psi_0=psi_0, t_val=t_val)
-        self._ultimo_resultado = res
-        self._ultimo_modo = 5
-        bloques = formatear_hamiltoniano(res)
-        self._escribir_bloques(bloques)
+        bloques = formatear_hamiltoniano(res, lang=self.i18n.current_language)
+        self._registrar_calculo(5, res, bloques)
+        return res
 
 
 if __name__ == "__main__":

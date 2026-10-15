@@ -2,17 +2,22 @@
 Safe mathematical parser for QuantumLab using Python AST.
 Enforces strict node whitelists, limits on depth and length, and safe evaluation.
 Protects against arbitrary Python execution, __import__, attribute access, and denial of service.
+Addresses DEF-01 (structured error codes) and DEF-08 (complex exponent evaluation & power validation).
 """
 
 import ast
 import re
+import math
+from typing import Optional
 import sympy as sp
 import numpy as np
 
-
-class ParseSecurityError(ValueError):
-    """Raised when an expression violates security or grammar restrictions."""
-    pass
+from .errors import (
+    QuantumLabError,
+    MathParseError,
+    ParseSecurityError,
+    ScientificValidationError,
+)
 
 
 class SafeASTParser:
@@ -76,7 +81,6 @@ class SafeASTParser:
     def normalize_input(cls, text: str) -> str:
         """Pre-normalizes Unicode math symbols and shorthand operators."""
         text = text.strip()
-        # Unicode replacements
         replacements = {
             "ħ": "hbar",
             "ω": "w",
@@ -91,17 +95,73 @@ class SafeASTParser:
         return text
 
     @classmethod
+    def _try_eval_const_expr(cls, node: ast.AST) -> Optional[float]:
+        """
+        DEF-08: Safely pre-evaluates pure constant arithmetic sub-trees without eval() or SymPy.
+        Returns float/int value if pure constant arithmetic, or None if it contains variables/functions.
+        Enforces MAX_INT_DIGITS and MAX_POWER on intermediate results to prevent combinatorial explosion.
+        """
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+                if isinstance(node.value, int) and len(str(abs(node.value))) > cls.MAX_INT_DIGITS:
+                    raise ParseSecurityError("error.int_too_large", max_digits=cls.MAX_INT_DIGITS)
+                return float(node.value)
+            return None
+
+        elif isinstance(node, ast.UnaryOp):
+            val = cls._try_eval_const_expr(node.operand)
+            if val is None:
+                return None
+            if isinstance(node.op, ast.USub):
+                return -val
+            elif isinstance(node.op, ast.UAdd):
+                return val
+            return None
+
+        elif isinstance(node, ast.BinOp):
+            left_val = cls._try_eval_const_expr(node.left)
+            right_val = cls._try_eval_const_expr(node.right)
+            if left_val is None or right_val is None:
+                return None
+
+            if isinstance(node.op, ast.Add):
+                return left_val + right_val
+            elif isinstance(node.op, ast.Sub):
+                return left_val - right_val
+            elif isinstance(node.op, ast.Mult):
+                res = left_val * right_val
+                if abs(res) > 10**cls.MAX_INT_DIGITS:
+                    raise ParseSecurityError("error.int_too_large", max_digits=cls.MAX_INT_DIGITS)
+                return res
+            elif isinstance(node.op, ast.Div):
+                if right_val == 0:
+                    return None
+                return left_val / right_val
+            elif isinstance(node.op, ast.Pow):
+                if abs(right_val) > cls.MAX_POWER:
+                    raise ParseSecurityError("error.exponent_too_large", exp=right_val, max_exp=cls.MAX_POWER)
+                try:
+                    return left_val ** right_val
+                except OverflowError:
+                    raise ParseSecurityError("error.exponent_too_large", exp=right_val, max_exp=cls.MAX_POWER)
+            return None
+
+        return None
+
+    @classmethod
     def parse(cls, expr_str: str, custom_symbols: dict = None) -> sp.Expr:
         """
         Parses mathematical expressions safely via Python AST.
         Only whitelisted mathematical functions, operators, and symbols are permitted.
         """
         if not expr_str or not expr_str.strip():
-            raise ParseSecurityError("La expresión está vacía.")
+            raise MathParseError("error.empty_expression")
 
         if len(expr_str) > cls.MAX_LENGTH:
             raise ParseSecurityError(
-                f"La longitud de la expresión ({len(expr_str)}) excede el límite permitido ({cls.MAX_LENGTH})."
+                "error.input_too_long",
+                length=len(expr_str),
+                max_len=cls.MAX_LENGTH
             )
 
         norm_text = cls.normalize_input(expr_str)
@@ -109,12 +169,14 @@ class SafeASTParser:
         try:
             tree = ast.parse(norm_text, mode="eval")
         except SyntaxError as e:
-            raise ParseSecurityError(f"Error de sintaxis matemática: {e.msg}") from e
+            raise MathParseError("error.syntax_invalid", detail=e.msg) from e
 
         node_count = sum(1 for _ in ast.walk(tree))
         if node_count > cls.MAX_NODES:
             raise ParseSecurityError(
-                f"La expresión es demasiado compleja: contiene {node_count} nodos AST (límite: {cls.MAX_NODES})."
+                "error.too_complex_nodes",
+                count=node_count,
+                max_nodes=cls.MAX_NODES
             )
 
         symbols = dict(cls.ALLOWED_SYMBOLS)
@@ -127,21 +189,35 @@ class SafeASTParser:
     @classmethod
     def _validate_and_check_depth(cls, node: ast.AST, depth: int):
         if depth > cls.MAX_DEPTH:
-            raise ParseSecurityError("La expresión es demasiado compleja (profundidad anidada excesiva).")
+            raise ParseSecurityError("error.ast_too_deep", max_depth=cls.MAX_DEPTH)
 
-        # Nested power rejection: e.g. x**y**z or (x**y)**z
+        # DEF-08: Rigorous power validation
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
-            if isinstance(node.left, ast.BinOp) and isinstance(node.left.op, ast.Pow):
-                raise ParseSecurityError("Potencias anidadas excesivas detectadas en la expresión.")
-            if isinstance(node.right, ast.BinOp) and isinstance(node.right.op, ast.Pow):
-                raise ParseSecurityError("Potencias anidadas excesivas detectadas en la expresión.")
+            # 1. Any nested power in base or exponent sub-trees (e.g. x**y**z, (x**y)**z, x**(2**3))
+            for subnode in ast.walk(node.left):
+                if subnode is not node and isinstance(subnode, ast.BinOp) and isinstance(subnode.op, ast.Pow):
+                    raise ParseSecurityError("error.power_nested_too_deep")
+            for subnode in ast.walk(node.right):
+                if subnode is not node and isinstance(subnode, ast.BinOp) and isinstance(subnode.op, ast.Pow):
+                    raise ParseSecurityError("error.power_nested_too_deep")
+
+            # 2. Evaluate constant exponent sub-trees (e.g. x**(50*3), 2**(25*8), x**(10+95))
+            const_exp = cls._try_eval_const_expr(node.right)
+            if const_exp is not None:
+                if abs(const_exp) > cls.MAX_POWER:
+                    raise ParseSecurityError("error.exponent_too_large", exp=const_exp, max_exp=cls.MAX_POWER)
+
+            # 3. Check combinatorial growth when base is constant (e.g. 100**60)
+            const_base = cls._try_eval_const_expr(node.left)
+            if const_base is not None and const_exp is not None:
+                if abs(const_base) > 1 and const_exp > 0:
+                    if const_exp * math.log10(abs(const_base)) > cls.MAX_INT_DIGITS:
+                        raise ParseSecurityError("error.int_too_large", max_digits=cls.MAX_INT_DIGITS)
 
         # Large integer digit limit
         if isinstance(node, ast.Constant) and isinstance(node.value, int) and not isinstance(node.value, bool):
             if len(str(abs(node.value))) > cls.MAX_INT_DIGITS:
-                raise ParseSecurityError(
-                    f"Número entero excede el límite seguro de {cls.MAX_INT_DIGITS} dígitos."
-                )
+                raise ParseSecurityError("error.int_too_large", max_digits=cls.MAX_INT_DIGITS)
 
         # Disallow attribute access, imports, lambdas, subscripts, comprehensions, etc.
         disallowed_types = (
@@ -160,7 +236,7 @@ class SafeASTParser:
             ast.NamedExpr,
         )
         if isinstance(node, disallowed_types):
-            raise ParseSecurityError(f"Elemento no permitido en expresión matemática: {type(node).__name__}")
+            raise ParseSecurityError("error.forbidden_node", node=type(node).__name__)
 
         for child in ast.iter_child_nodes(node):
             cls._validate_and_check_depth(child, depth + 1)
@@ -168,21 +244,19 @@ class SafeASTParser:
     @classmethod
     def _eval_ast_node(cls, node: ast.AST, symbols: dict) -> sp.Expr:
         if isinstance(node, ast.Constant):
-            if isinstance(node.value, (int, float)):
-                return sp.sympify(node.value)
-            elif isinstance(node.value, complex):
+            if isinstance(node.value, (int, float, complex)):
                 return sp.sympify(node.value)
             else:
-                raise ParseSecurityError(f"Tipo constante no numérico no permitido: {type(node.value).__name__}")
+                raise ParseSecurityError("error.forbidden_node", node=type(node.value).__name__)
 
         elif isinstance(node, ast.Name):
             name = node.id
             if name in symbols:
                 return symbols[name]
             elif name in cls.ALLOWED_FUNCS:
-                raise ParseSecurityError(f"'{name}' es una función y debe invocarse con paréntesis, ej. {name}(x)")
+                raise MathParseError("error.func_without_parens", name=name)
             else:
-                raise ParseSecurityError(f"Símbolo no reconocido o no permitido: '{name}'")
+                raise ParseSecurityError("error.forbidden_variable", name=name)
 
         elif isinstance(node, ast.UnaryOp):
             operand = cls._eval_ast_node(node.operand, symbols)
@@ -191,7 +265,7 @@ class SafeASTParser:
             elif isinstance(node.op, ast.UAdd):
                 return operand
             else:
-                raise ParseSecurityError(f"Operador unario no soportado: {type(node.op).__name__}")
+                raise MathParseError("error.unsupported_unary", op=type(node.op).__name__)
 
         elif isinstance(node, ast.BinOp):
             left = cls._eval_ast_node(node.left, symbols)
@@ -206,32 +280,33 @@ class SafeASTParser:
             elif isinstance(node.op, ast.Div):
                 return left / right
             elif isinstance(node.op, ast.Pow):
-                # Check for extreme exponent values
                 if isinstance(node.right, ast.Constant) and isinstance(node.right.value, (int, float)):
                     if abs(node.right.value) > cls.MAX_POWER:
                         raise ParseSecurityError(
-                            f"Exponente {node.right.value} excede el límite máximo de {cls.MAX_POWER}."
+                            "error.exponent_too_large",
+                            exp=node.right.value,
+                            max_exp=cls.MAX_POWER
                         )
                 return left ** right
             else:
-                raise ParseSecurityError(f"Operador binario no soportado: {type(node.op).__name__}")
+                raise MathParseError("error.unsupported_binary", op=type(node.op).__name__)
 
         elif isinstance(node, ast.Call):
             if not isinstance(node.func, ast.Name):
-                raise ParseSecurityError("Solo se permiten llamadas a funciones directas nombradas.")
+                raise ParseSecurityError("error.invalid_call")
             func_name = node.func.id
             if func_name not in cls.ALLOWED_FUNCS:
-                raise ParseSecurityError(f"Función no permitida: '{func_name}'")
+                raise ParseSecurityError("error.forbidden_function", func=func_name)
 
             sympy_func = cls.ALLOWED_FUNCS[func_name]
             if node.keywords:
-                raise ParseSecurityError("Argumentos por clave no permitidos en funciones matemáticas.")
+                raise ParseSecurityError("error.invalid_call_kwargs")
 
             args = [cls._eval_ast_node(arg, symbols) for arg in node.args]
             return sympy_func(*args)
 
         else:
-            raise ParseSecurityError(f"Nodo AST no soportado: {type(node).__name__}")
+            raise ParseSecurityError("error.forbidden_node", node=type(node).__name__)
 
 
 def parse_parameters(text: str) -> dict:
@@ -249,27 +324,23 @@ def parse_parameters(text: str) -> dict:
     raw = text.strip()
     params["raw"] = raw
 
-    # Look for key=value pairs: key=value
     pairs = re.findall(r"([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([^,;()]+)", raw)
     for key, val_str in pairs:
         key = key.strip()
         val_str = val_str.strip()
-        # Strip unit suffixes
         cleaned_val = re.sub(r"(?i)\s*(?:ev|nm|pm|um|mm|m|s|fs|ps|ns|kg|j)?$", "", val_str).strip()
         try:
-            # Try float or int
             if "." in cleaned_val or "e" in cleaned_val.lower():
                 val_num = float(cleaned_val)
                 if key == "n" and not val_num.is_integer():
-                    raise ValueError(f"El número cuántico 'n' no puede ser fraccionario: {cleaned_val}")
+                    raise ScientificValidationError("error.quantum_number_fractional", n=cleaned_val)
                 params[key] = int(val_num) if (key == "n" and val_num.is_integer()) else val_num
             else:
                 params[key] = int(cleaned_val)
         except ValueError as e:
-            if key == "n" and "fraccionario" in str(e):
+            if isinstance(e, ScientificValidationError):
                 raise
             try:
-                # Try sympy expression
                 params[key] = SafeASTParser.parse(cleaned_val)
             except Exception:
                 params[key] = val_str
@@ -286,12 +357,11 @@ def parse_matrix(raw_text: str, max_dim: int = 16) -> np.ndarray:
       - Finite complex or real elements
     """
     if not raw_text or not raw_text.strip():
-        raise ValueError("La entrada de matriz está vacía.")
+        raise ScientificValidationError("error.matrix_empty")
 
-    # Split rows by semicolon
     raw_rows = [r.strip() for r in raw_text.strip().split(";") if r.strip()]
     if not raw_rows:
-        raise ValueError("No se encontraron filas válidas en la matriz.")
+        raise ScientificValidationError("error.matrix_no_rows")
 
     matrix_rows = []
     expected_cols = None
@@ -299,35 +369,36 @@ def parse_matrix(raw_text: str, max_dim: int = 16) -> np.ndarray:
     for r_idx, row_str in enumerate(raw_rows):
         tokens = [t.strip() for t in row_str.split(",") if t.strip()]
         if not tokens:
-            raise ValueError(f"La fila {r_idx + 1} de la matriz está vacía.")
+            raise ScientificValidationError("error.matrix_empty_row", row=r_idx + 1)
 
         if expected_cols is None:
             expected_cols = len(tokens)
         elif len(tokens) != expected_cols:
-            raise ValueError(
-                f"Fila irregular: la fila {r_idx + 1} tiene {len(tokens)} elementos, pero la fila 1 tiene {expected_cols}."
+            raise ScientificValidationError(
+                "error.matrix_ragged_rows",
+                row=r_idx + 1,
+                len=len(tokens),
+                expected=expected_cols
             )
 
         row_vals = []
         for val_str in tokens:
             lower_token = val_str.strip().lower()
             if lower_token in ("inf", "-inf", "+inf", "nan", "-nan", "+nan", "oo", "-oo"):
-                raise ValueError(f"Elemento de matriz no finito detectado: '{val_str}'")
+                raise ScientificValidationError("error.matrix_non_finite", val=val_str)
 
-            # Replace 'i' with 'j' for Python complex
             norm_val = val_str.replace("i", "j")
             try:
                 val = complex(norm_val)
             except ValueError as e:
-                # Try evaluating as safe math expression
                 try:
                     sym_val = SafeASTParser.parse(val_str)
                     val = complex(complex(sym_val.evalf()))
                 except Exception:
-                    raise ValueError(f"Valor numérico no válido en la matriz: '{val_str}'") from e
+                    raise ScientificValidationError("error.matrix_invalid_val", val=val_str) from e
 
             if not np.isfinite(val.real) or not np.isfinite(val.imag):
-                raise ValueError(f"Elemento de matriz no finito detectado: '{val_str}'")
+                raise ScientificValidationError("error.matrix_non_finite", val=val_str)
             row_vals.append(val)
 
         matrix_rows.append(row_vals)
@@ -336,12 +407,10 @@ def parse_matrix(raw_text: str, max_dim: int = 16) -> np.ndarray:
     ncols = expected_cols
 
     if nrows != ncols:
-        raise ValueError(
-            f"La matriz debe ser cuadrada (N×N), pero tiene dimensiones {nrows}×{ncols}."
-        )
+        raise ScientificValidationError("error.matrix_not_square", rows=nrows, cols=ncols)
 
     if nrows > max_dim:
-        raise ValueError(f"Dimensión de matriz ({nrows}×{ncols}) excede el límite permitido ({max_dim}×{max_dim}).")
+        raise ScientificValidationError("error.matrix_max_dim", rows=nrows, cols=ncols, max_dim=max_dim)
 
     return np.array(matrix_rows, dtype=complex)
 
@@ -353,20 +422,17 @@ def parse_state_vector(raw_text: str, expected_dim: int = None) -> np.ndarray:
     """
     clean = raw_text.strip()
     if not clean:
-        raise ValueError("El vector de estado inicial está vacío.")
+        raise ScientificValidationError("error.state_vector_empty")
 
-    # If enclosed in brackets [ ... ], extract strictly the bracket content
     bracket_match = re.search(r"\[(.*)\]", clean)
     if bracket_match:
         clean = bracket_match.group(1).strip()
     else:
-        # Strip only trailing parenthesized descriptions like '(Estado inicial |ψ(0)⟩)'
         clean = re.sub(r"\s*\([^()]*[a-zA-Z\s|ψ⟩]{3,}[^()]*\)\s*$", "", clean).strip()
 
-    # Split by comma or semicolon
     tokens = [t.strip() for t in re.split(r"[,;]+", clean) if t.strip()]
     if not tokens:
-        raise ValueError("El vector de estado inicial está vacío.")
+        raise ScientificValidationError("error.state_vector_empty")
 
     values = []
     for token in tokens:
@@ -378,23 +444,25 @@ def parse_state_vector(raw_text: str, expected_dim: int = None) -> np.ndarray:
                 sym_val = SafeASTParser.parse(token)
                 val = complex(sym_val.evalf())
             except Exception as e:
-                raise ValueError(f"Componente vectorial no válida: '{token}'") from e
+                raise ScientificValidationError("error.state_vector_invalid_component", token=token) from e
 
         if not np.isfinite(val.real) or not np.isfinite(val.imag):
-            raise ValueError(f"Componente vectorial no finita: '{token}'")
+            raise ScientificValidationError("error.state_vector_non_finite", token=token)
         values.append(val)
 
     if not values:
-        raise ValueError("No se pudieron extraer componentes numéricas del vector de estado.")
+        raise ScientificValidationError("error.state_vector_no_components")
 
     vec = np.array(values, dtype=complex)
     if expected_dim is not None and len(vec) != expected_dim:
-        raise ValueError(
-            f"Dimensión del vector de estado ({len(vec)}) no coincide con la dimensión del Hamiltoniano ({expected_dim})."
+        raise ScientificValidationError(
+            "error.state_vector_dimension_mismatch",
+            vec_len=len(vec),
+            mat_dim=expected_dim
         )
 
     norm = np.linalg.norm(vec)
     if norm < 1e-15:
-        raise ValueError("El vector de estado no puede ser el vector nulo (norma cero).")
+        raise ScientificValidationError("error.state_vector_null")
 
     return vec

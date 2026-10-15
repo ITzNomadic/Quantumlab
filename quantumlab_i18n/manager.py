@@ -29,7 +29,11 @@ class I18NManager:
         self._listeners: List[Callable[[str], None]] = []
 
     def _load_saved_preference(self) -> str:
-        """Loads saved language preference from user config directory."""
+        """Loads saved language preference from environment or user config directory."""
+        env_lang = os.environ.get("QUANTUMLAB_LANG")
+        if env_lang in self.SUPPORTED_LANGUAGES:
+            return env_lang
+
         try:
             if os.path.exists(CONFIG_FILE):
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -89,28 +93,70 @@ class I18NManager:
         if listener in self._listeners:
             self._listeners.remove(listener)
 
-    def get_text(self, key: str, lang: Optional[str] = None, **kwargs) -> str:
+    def get_text(self, key: str, lang: Optional[str] = None, strict: bool = False, **kwargs) -> str:
         """
-        Retrieves a translated string by key with fallback to DEFAULT_LANGUAGE.
-        Supports formatting kwargs and optional explicit language override.
+        Retrieves a translated string by key.
+        DEF-04: English NEVER falls back to Spanish. If a key is missing in English,
+        it logs a localization marker or raises KeyError in strict mode.
         """
         target_lang = lang if lang in self.SUPPORTED_LANGUAGES else self._current_language
         lang_dict = TRANSLATIONS.get(target_lang, STRINGS_ES)
         text = lang_dict.get(key)
+
         if text is None:
-            # Fallback to default
-            text = STRINGS_ES.get(key, key)
+            if strict:
+                raise KeyError(f"Missing translation key '{key}' in language '{target_lang}'")
+            if target_lang == "en":
+                return f"[Missing translation: {key}]"
+            else:
+                return f"[Falta traducción: {key}]"
 
         if kwargs:
             try:
                 return text.format(**kwargs)
-            except Exception:
+            except Exception as e:
+                if strict:
+                    raise ValueError(f"Interpolation error for key '{key}' in '{target_lang}' with kwargs {kwargs}: {e}") from e
                 return text
         return text
 
-    def t(self, key: str, lang: Optional[str] = None, **kwargs) -> str:
+    def t(self, key: str, lang: Optional[str] = None, strict: bool = False, **kwargs) -> str:
         """Shorthand alias for get_text."""
-        return self.get_text(key, lang=lang, **kwargs)
+        return self.get_text(key, lang=lang, strict=strict, **kwargs)
+
+    @classmethod
+    def validate_dictionaries(cls) -> List[str]:
+        """
+        DEF-04: Validates dictionary completeness and template parameter parity between languages.
+        Returns a list of errors found (empty list if 100% valid).
+        """
+        import re
+        errors = []
+        keys_es = set(STRINGS_ES.keys())
+        keys_en = set(STRINGS_EN.keys())
+
+        missing_in_en = keys_es - keys_en
+        if missing_in_en:
+            errors.append(f"Keys present in Spanish but missing in English: {sorted(missing_in_en)}")
+
+        missing_in_es = keys_en - keys_es
+        if missing_in_es:
+            errors.append(f"Keys present in English but missing in Spanish: {sorted(missing_in_es)}")
+
+        common_keys = keys_es & keys_en
+        param_pattern = re.compile(r"\{([a-zA-Z0-9_]+)(?::[^}]*)?\}")
+
+        for k in common_keys:
+            val_es = STRINGS_ES[k]
+            val_en = STRINGS_EN[k]
+            params_es = set(param_pattern.findall(val_es))
+            params_en = set(param_pattern.findall(val_en))
+            if params_es != params_en:
+                errors.append(
+                    f"Template parameter mismatch for key '{k}': Spanish has {params_es}, English has {params_en}"
+                )
+
+        return errors
 
 
 # Global singleton manager instance

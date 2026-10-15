@@ -2,6 +2,32 @@
 
 All notable changes to this project will be recorded here.
 
+## [0.3.1] - 2026-10-15
+
+### Fixed (Corrective Audit: Internationalization, Physics & Security)
+- **DEF-01 — Centralized Exception Architecture & 100% English Error Localization**:
+  Introduced `QuantumLabError(ValueError)`, `MathParseError`, `ParseSecurityError`, and `ScientificValidationError` with stable programmatic error codes (`error.*`) and structured parameters. Eliminated hardcoded Spanish error messages from the AST parser and physics engines. Presentation layer translates exceptions on-the-fly into the active language. English mode verified to have 0 residual Spanish words across all errors and validation checks.
+- **DEF-02 — Dynamic Preset Updating Without Overwriting User Inputs**:
+  Form presets with descriptive text dynamically update when switching languages while preserving user-edited mathematical expressions.
+- **DEF-03 — Multi-Step Calculation History Preservation on Language Switch**:
+  Implemented structured calculation history (`historial_calculos`). Switching languages seamlessly re-renders all multi-step calculation blocks across all 6 physics modules without wiping the results sheet.
+- **DEF-04 — Strict Dictionary Integrity & Selector Invariance**:
+  Eliminated silent English fallback to Spanish on missing keys (`[Missing translation: <key>]` or `KeyError` in strict mode). Validated 100% key and template parameter parity (264 keys in `en.py` and `es.py`, 0 errors). Guaranteed invariant `🌐 Language` label across all views and languages.
+- **DEF-05 — Hamiltonian Units Consistency in Natural Units ($\hbar = 1$)**:
+  Adopted canonical natural units contract ($\hbar = 1$) for matrix Hamiltonians. Fixed Bohr transition frequency ($\omega = \Delta E / \hbar = \Delta E$ [rad / time unit]), eliminating unphysical $\sim 10^{34}$ values caused by accidental division by SI $\hbar$.
+- **DEF-06 — Distinct Presentation of Raw vs. Normalized Initial State**:
+  Explicitly differentiates raw entered vector $|\psi_{\text{raw}}(0)\rangle$ (with norm) and normalized physical state $|\psi(0)\rangle$ (norm = 1.0) during time evolution.
+- **DEF-07 — Parameter $L$ Substitution & Boundary Rigor**:
+  Consistent propagation and symbolic substitution of well width $L$ into integration bounds, standing wave functions, piecewise domains, symbolic integrals, and numerical probabilities.
+- **DEF-08 — Complex Exponent AST Pre-Evaluation & Bounds Checking**:
+  Hardened `SafeASTParser` by pre-evaluating constant arithmetic exponent sub-trees in the AST without invoking `eval()`. Enforces strict exponent bounds (max power 100) on expressions like `x**(50*3)` and `2**(25*8)`, and blocks nested powers before passing to SymPy.
+- **DEF-09 — Responsive Asynchronous Execution, Cancellation & Watchdog**:
+  Implemented `AsyncCalculationManager` with 100% thread-safe `queue.Queue` dispatch and Tkinter main-thread polling. Prevents GUI freezing during symbolic integrations, supports immediate cancellation, and enforces a 30s watchdog timeout.
+
+### Tests
+- Added `tests/test_v031_defects.py` with 20 dedicated unit and integration tests verifying DEF-01 to DEF-09.
+- Total test suite expanded to 108 tests passing at 100%.
+
 ## [0.3.0] - 2026-10-15
 
 ### Added (Internationalization & Real-time Language Switch)

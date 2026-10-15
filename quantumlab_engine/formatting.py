@@ -263,10 +263,10 @@ def formatear_hamiltoniano(res: HamiltonianResult, lang: Optional[str] = None) -
     bloques.append((detalle.strip(), "formula"))
     bloques.append((t("hamiltonian.eigen_residual_info", lang=lang, res=res.max_residuo_autovector), "formula"))
 
-    # Step 3: Gap
+    # Step 3: Gap (DEF-05: Consistent natural units hbar = 1)
     if res.es_hermitica:
         bloques.append((t("hamiltonian.step3_title", lang=lang), "paso"))
-        freq = (res.brecha / HBAR_SI) if res.brecha else 0.0
+        freq = res.brecha if res.brecha is not None else 0.0
         gap_txt = t(
             "hamiltonian.gap_info",
             lang=lang,
@@ -280,31 +280,38 @@ def formatear_hamiltoniano(res: HamiltonianResult, lang: Optional[str] = None) -
     else:
         bloques.append((t("hamiltonian.non_hermitian_warning", lang=lang), "advertencia"))
 
-    # Step 4: Time evolution
+    # Step 4: Time evolution (DEF-06: Accurate normalization distinction)
     if res.psi_t is not None:
         bloques.append((t("hamiltonian.step4_title", lang=lang), "paso"))
         psi_0_str = "  ".join([f"{v.real:+.4f}{v.imag:+.4f}i" for v in res.psi_0])
         psi_t_str = "  ".join([f"{v.real:+.4f}{v.imag:+.4f}i" for v in res.psi_t])
         t_str = f"{res.evolucion_t:.4f}" if res.evolucion_t is not None else "0.0000"
 
-        if res.es_hermitica:
+        norm_0 = res.norma_psi_0 if res.norma_psi_0 is not None else float(np.linalg.norm(res.psi_0))
+        needs_renorm_display = abs(norm_0 - 1.0) > 1e-5 and getattr(res, "psi_0_norm", None) is not None
+
+        if needs_renorm_display:
+            psi_0_norm_str = "  ".join([f"{v.real:+.4f}{v.imag:+.4f}i" for v in res.psi_0_norm])
+            key = "hamiltonian.evolution_unitary_renorm" if res.es_hermitica else "hamiltonian.evolution_non_unitary_renorm"
             evo_txt = t(
-                "hamiltonian.evolution_unitary",
+                key,
                 lang=lang,
                 t=t_str,
-                psi_0=psi_0_str,
+                psi_0_raw=psi_0_str,
+                norm_0=norm_0,
+                psi_0_norm=psi_0_norm_str,
                 psi_t=psi_t_str,
-                norm_0=1.0,
                 norm_t=res.norma_psi_t,
             )
         else:
+            key = "hamiltonian.evolution_unitary" if res.es_hermitica else "hamiltonian.evolution_non_unitary"
             evo_txt = t(
-                "hamiltonian.evolution_non_unitary",
+                key,
                 lang=lang,
                 t=t_str,
                 psi_0=psi_0_str,
                 psi_t=psi_t_str,
-                norm_0=1.0,
+                norm_0=norm_0,
                 norm_t=res.norma_psi_t,
             )
         bloques.append((evo_txt, "formula"))

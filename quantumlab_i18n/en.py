@@ -421,7 +421,7 @@ STRINGS_EN = {
     "hamiltonian.gap_info": (
         "  Ground state E₀ = {E0:.6f}\n"
         "  Quantum gap to first distinct excited level: ΔE = {gap:.6f}\n"
-        "  Associated Bohr frequency: ω = ΔE / ℏ = {freq:.6e} rad/s"
+        "  Associated Bohr frequency: ω = ΔE / ℏ = {freq:.6f} rad / time unit (natural units ℏ = 1)"
     ),
     "hamiltonian.gap_degenerate_note": "  (Ground level degeneracy detected; gap measured to the first distinct higher level).",
     "hamiltonian.gap_degenerate_spectrum": "0.0000 (Fully degenerate spectrum; no distinct higher excited level).",
@@ -443,37 +443,72 @@ STRINGS_EN = {
         "  Evolved state:   |ψ(t)⟩ = [ {psi_t} ]ᵀ  (Norm = {norm_t:.6f})\n"
         "  Non-unitary evolution (quantum dissipation / gain): Norm varies due to non-Hermiticity of H."
     ),
+    "hamiltonian.evolution_unitary_renorm": (
+        "  Elapsed time: t = {t} (in units ℏ = 1)\n"
+        "  Entered vector:   |ψ_raw(0)⟩ = [ {psi_0_raw} ]ᵀ  (Norm = {norm_0:.6f})\n"
+        "  Normalized state: |ψ(0)⟩     = [ {psi_0_norm} ]ᵀ  (Norm = 1.000000)\n"
+        "  Evolved state:    |ψ(t)⟩     = [ {psi_t} ]ᵀ  (Norm = {norm_t:.6f})\n"
+        "  Unitary conservation: Normalized state norm is strictly conserved."
+    ),
+    "hamiltonian.evolution_non_unitary_renorm": (
+        "  Elapsed time: t = {t} (in units ℏ = 1)\n"
+        "  Entered vector:   |ψ_raw(0)⟩ = [ {psi_0_raw} ]ᵀ  (Norm = {norm_0:.6f})\n"
+        "  Normalized state: |ψ(0)⟩     = [ {psi_0_norm} ]ᵀ  (Norm = 1.000000)\n"
+        "  Evolved state:    |ψ(t)⟩     = [ {psi_t} ]ᵀ  (Norm = {norm_t:.6f})\n"
+        "  Non-unitary evolution (quantum dissipation / gain): Norm varies due to non-Hermiticity of H."
+    ),
 
     # -------------------------------------------------------------
     # Scientific & Parser Error Messages
     # -------------------------------------------------------------
     "error.empty_expression": "Mathematical expression cannot be empty.",
-    "error.input_too_long": "Expression exceeds maximum allowed length ({max_len} characters).",
-    "error.ast_too_deep": "Expression is excessively complex or deeply nested (depth > {max_depth}).",
-    "error.exponent_too_large": "Numerical exponent ({exp}) exceeds safety threshold ({max_exp}).",
+    "error.input_too_long": "Expression length ({length}) exceeds allowed limit ({max_len} characters).",
+    "error.ast_too_deep": "Expression is too complex or nested (depth or limit exceeded).",
+    "error.too_complex_nodes": "Expression is too complex: contains {count} AST nodes (limit: {max_nodes}).",
+    "error.exponent_too_large": "Numerical exponent ({exp}) exceeds maximum allowed limit ({max_exp}).",
     "error.power_nested_too_deep": "Excessive nested powers detected in expression.",
+    "error.int_too_large": "Integer exceeds safe limit of {max_digits} digits.",
     "error.forbidden_node": "Disallowed syntax construct: {node}.",
     "error.forbidden_function": "Disallowed mathematical function: '{func}'.",
     "error.forbidden_variable": "Disallowed variable or constant: '{name}'.",
+    "error.func_without_parens": "'{name}' is a function and must be called with parentheses, e.g. {name}(x).",
+    "error.unsupported_unary": "Unsupported unary operator: {op}.",
+    "error.unsupported_binary": "Unsupported binary operator: {op}.",
+    "error.invalid_call": "Only direct named function calls are permitted.",
+    "error.invalid_call_kwargs": "Keyword arguments are not allowed in mathematical functions.",
     "error.unsafe_attribute": "Attribute access is not allowed.",
     "error.syntax_invalid": "Invalid mathematical syntax: {detail}",
-    "error.null_state_rejected": "Quantum state cannot be the null function (ψ = 0). Norm would be zero.",
+    "error.null_state_rejected": "Quantum state cannot be the null function (ψ = 0). The zero vector is never an eigenstate. Norm would be zero.",
     "error.norm_zero_or_negative": "Density integral |ψ|² is zero or non-positive; state is not normalizable.",
     "error.norm_divergent": "Normalization integral diverges (∞) or does not converge analytically on domain. ψ ∉ L².",
     "error.asymptotic_divergence_neg_inf": "Wave function diverges towards infinity as x -> -oo; not normalizable in L².",
     "error.asymptotic_divergence_pos_inf": "Wave function diverges towards infinity as x -> +oo; not normalizable in L².",
-    "error.well_inverted_limits": "Inverted bounds in potential well: requires a < b, but received a={a} > b={b}.",
-    "error.quantum_number_integer_positive": "Quantum number 'n' must be a positive integer (n >= 1).",
+    "error.well_inverted_limits": "Lower limit a={a} is strictly greater than upper limit b={b} (a > b yields invalid probabilities).",
+    "error.quantum_number_integer_positive": "Quantum number 'n' must be a strictly positive integer (n >= 1).",
     "error.quantum_number_integer_non_negative": "Quantum number 'n' must be a non-negative integer (n >= 0).",
     "error.quantum_number_fractional": "Quantum number 'n' cannot be fractional. Enter a valid integer.",
     "error.well_width_positive": "Well width 'L' must be a strictly positive real number (L > 0).",
-    "error.tunnel_param_finite": "Tunneling parameters (E, V0, a) must be finite real numbers.",
-    "error.tunnel_param_positive": "Tunneling parameters must be non-negative (E >= 0, V0 >= 0, a >= 0).",
-    "error.matrix_not_square": "Input matrix is not square ({rows} rows x {cols} columns).",
-    "error.matrix_empty": "Hamiltonian matrix cannot be empty.",
+    "error.well_width_invalid": "Well width 'L' is invalid or non-finite.",
+    "error.tunnel_param_finite": "Parameter '{name}' must be a finite real numerical value.",
+    "error.tunnel_param_positive": "Parameter '{name}' must be non-negative.",
+    "error.matrix_not_square": "Matrix must be square (N×N), but has dimensions {rows}×{cols}.",
+    "error.matrix_empty": "Matrix input is empty.",
+    "error.matrix_no_rows": "No valid rows found in matrix.",
+    "error.matrix_empty_row": "Row {row} of the matrix is empty.",
+    "error.matrix_ragged_rows": "Irregular row: row {row} has {len} elements, but row 1 has {expected}.",
+    "error.matrix_non_finite": "Non-finite matrix element detected: '{val}'.",
+    "error.matrix_invalid_val": "Invalid numeric value in matrix: '{val}'.",
+    "error.matrix_max_dim": "Matrix dimension ({rows}×{cols}) exceeds allowed limit ({max_dim}×{max_dim}).",
     "error.matrix_invalid_format": "Invalid matrix format. Enter rows separated by ';' and elements by ','.",
+    "error.state_vector_empty": "Initial state vector is empty.",
+    "error.state_vector_invalid_component": "Invalid vector component: '{token}'.",
+    "error.state_vector_non_finite": "Non-finite vector component: '{token}'.",
+    "error.state_vector_no_components": "Could not extract numerical components from state vector.",
     "error.state_vector_dimension_mismatch": "State vector dimension ({vec_len}) does not match Hamiltonian dimension ({mat_dim}).",
+    "error.state_vector_null": "State vector cannot be the null vector (zero norm).",
     "error.state_vector_invalid": "Invalid initial state vector: {detail}",
     "error.time_invalid": "Invalid time value 't': {detail}",
     "error.time_must_be_finite": "Time 't' must be a finite real number.",
+    "error.calc_timeout": "Symbolic calculation exceeded safety timeout ({timeout} s).",
+    "error.calc_cancelled": "Calculation was cancelled by the user.",
 }

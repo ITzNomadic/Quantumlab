@@ -1,8 +1,10 @@
 """
 Pure scientific and quantum physics computational engine for QuantumLab.
 Decoupled from Tkinter and GUI representations.
-Implements rigorous physical invariants, domain checks, stable numerical methods,
-and addresses audit findings QL-002 through QL-015, QL-020, QL-021, QL-022, QL-023, QL-031, QL-032.
+Implements rigorous physical invariants, domain checks, stable numerical methods.
+Addresses DEF-01 (structured ScientificValidationError exceptions),
+DEF-05 (natural units for Hamiltonian), DEF-06 (renormalized state presentation),
+and DEF-07 (consistent parameter L substitution and propagation).
 """
 
 from dataclasses import dataclass
@@ -10,6 +12,7 @@ from typing import Optional, List, Tuple
 import sympy as sp
 import numpy as np
 
+from .errors import ScientificValidationError
 from .parser import SafeASTParser, parse_parameters, parse_matrix, parse_state_vector
 
 # Physical constants in SI
@@ -112,6 +115,8 @@ class HamiltonianResult:
     psi_0: Optional[np.ndarray] = None
     psi_t: Optional[np.ndarray] = None
     norma_psi_t: Optional[float] = None
+    psi_0_norm: Optional[np.ndarray] = None
+    norma_psi_0: Optional[float] = None
 
 
 # =====================================================================
@@ -124,24 +129,24 @@ def analizar_funcion_onda(psi_raw: sp.Expr, a: sp.Expr, b: sp.Expr) -> WaveFunct
 
     # QL-004: Validate non-zero state
     if psi_raw == 0 or psi_raw.is_zero:
-        raise ValueError("El estado cuántico no puede ser la función nula (ψ = 0). La norma sería cero.")
+        raise ScientificValidationError("error.null_state_rejected")
 
     # Rapid asymptotic divergence check for unbounded wave functions on infinite domains
     if a == -sp.oo:
         try:
             lim_neg = sp.limit(sp.Abs(psi_raw), x, -sp.oo)
             if lim_neg in (sp.oo, -sp.oo, sp.zoo):
-                raise ValueError("La función de onda diverge hacia infinito cuando x -> -oo; no es normalizable en L².")
+                raise ScientificValidationError("error.asymptotic_divergence_neg_inf")
         except Exception as e:
-            if "diverge hacia infinito" in str(e):
+            if isinstance(e, ScientificValidationError):
                 raise
     if b == sp.oo:
         try:
             lim_pos = sp.limit(sp.Abs(psi_raw), x, sp.oo)
             if lim_pos in (sp.oo, -sp.oo, sp.zoo):
-                raise ValueError("La función de onda diverge hacia infinito cuando x -> +oo; no es normalizable en L².")
+                raise ScientificValidationError("error.asymptotic_divergence_pos_inf")
         except Exception as e:
-            if "diverge hacia infinito" in str(e):
+            if isinstance(e, ScientificValidationError):
                 raise
 
     # Compute norm integral
@@ -150,9 +155,9 @@ def analizar_funcion_onda(psi_raw: sp.Expr, a: sp.Expr, b: sp.Expr) -> WaveFunct
 
     # Check finite, real, strictly positive integral
     if norm_integral == 0 or (norm_integral.is_number and norm_integral <= 0):
-        raise ValueError("La integral de densidad |ψ|² es nula o no positiva; la función no es normalizable.")
+        raise ScientificValidationError("error.norm_zero_or_negative")
     if norm_integral in (sp.oo, -sp.oo, sp.zoo, sp.nan) or not norm_integral.is_finite:
-        raise ValueError("La integral de normalización diverge (∞) en el dominio especificado. ψ ∉ L².")
+        raise ScientificValidationError("error.norm_divergent")
 
     constante_A = sp.simplify(1 / sp.sqrt(norm_integral))
     psi_norm = sp.simplify(constante_A * psi_raw)
@@ -195,7 +200,6 @@ def analizar_funcion_onda(psi_raw: sp.Expr, a: sp.Expr, b: sp.Expr) -> WaveFunct
     # QL-002: Heisenberg evaluation
     delta_x_delta_p = sp.simplify(delta_x * delta_p)
 
-    # Check if delta_p is 0, NaN, or non-verifiable
     heisenberg_cumple = False
     heisenberg_nota = ""
     heisenberg_codigo = "indeterminate"
@@ -268,7 +272,7 @@ def analizar_schrodinger_1d(psi: sp.Expr, V: sp.Expr, a: sp.Expr = None, b: sp.E
 
     # QL-006: Null state rejected
     if psi == 0 or psi.is_zero:
-        raise ValueError("El estado cuántico no puede ser la función nula (ψ = 0). El vector cero nunca es un autoestado.")
+        raise ScientificValidationError("error.null_state_rejected")
 
     d2_psi = sp.diff(psi, x, 2)
     termino_cinetico = sp.simplify(-(hbar**2 / (2 * m)) * d2_psi)
@@ -286,7 +290,6 @@ def analizar_schrodinger_1d(psi: sp.Expr, V: sp.Expr, a: sp.Expr = None, b: sp.E
     # QL-007: Check normalizability and physical admissibility
     es_estado_fisico_ligado = False
     if es_autoestado_formal:
-        # Check square integrability
         dom_a = a if a is not None else -sp.oo
         dom_b = b if b is not None else sp.oo
         try:
@@ -296,7 +299,7 @@ def analizar_schrodinger_1d(psi: sp.Expr, V: sp.Expr, a: sp.Expr = None, b: sp.E
         except Exception:
             es_estado_fisico_ligado = False
 
-    # QL-021: Construct accurate interpretation message
+    # Construct interpretation message
     if es_autoestado_formal:
         if es_estado_fisico_ligado:
             mensaje = (
@@ -309,7 +312,6 @@ def analizar_schrodinger_1d(psi: sp.Expr, V: sp.Expr, a: sp.Expr = None, b: sp.E
                 f"pero no es un estado ligado normalizable en L²(ℝ) (puede corresponder a un estado de dispersión o solución no integrable)."
             )
     else:
-        # QL-021: Do not assert superposition of discrete levels without proof
         mensaje = (
             f"NO ES UNA FUNCIÓN PROPIA: El cociente E(x) = {energia} depende de la posición 'x' "
             f"(o el residuo Ĥψ - Eψ ≠ 0). Por lo tanto, ψ(x) no es un autoestado del Hamiltoniano bajo el potencial V(x). "
@@ -328,7 +330,7 @@ def analizar_schrodinger_1d(psi: sp.Expr, V: sp.Expr, a: sp.Expr = None, b: sp.E
 
 
 # =====================================================================
-# 3. POZO DE POTENCIAL INFINITO (QL-008, QL-009, QL-010)
+# 3. POZO DE POTENCIAL INFINITO (QL-008, QL-009, QL-010, DEF-07)
 # =====================================================================
 def analizar_pozo_infinito(a: sp.Expr, b: sp.Expr, n_val: int = 1, L_val: sp.Expr = None) -> InfiniteWellResult:
     x = SafeASTParser.x
@@ -338,57 +340,62 @@ def analizar_pozo_infinito(a: sp.Expr, b: sp.Expr, n_val: int = 1, L_val: sp.Exp
     # QL-010: Validate n positive integer, rejecting fractional inputs
     if isinstance(n_val, float):
         if not n_val.is_integer():
-            raise ValueError(f"El número cuántico 'n' no puede ser fraccionario ({n_val}). Ingrese un entero válido.")
+            raise ScientificValidationError("error.quantum_number_fractional", n=n_val)
         n_val = int(n_val)
 
     if not isinstance(n_val, int) or n_val < 1:
-        raise ValueError(f"El número cuántico 'n' debe ser un entero estrictamente positivo (n = 1, 2, 3...); recibido: {n_val}")
+        raise ScientificValidationError("error.quantum_number_integer_positive", n=n_val)
 
-    # Process L_val
+    # DEF-07: Process and propagate L_val consistently
     if L_val is not None:
         if isinstance(L_val, (int, float)):
-            if L_val <= 0:
-                raise ValueError(f"El ancho del pozo 'L' debe ser un número real estrictamente positivo (L > 0); recibido: {L_val}")
+            if L_val <= 0 or not np.isfinite(L_val):
+                raise ScientificValidationError("error.well_width_positive", L=L_val)
             L_num = float(L_val)
-            L = sp.Float(L_val) if isinstance(L_val, float) else sp.Integer(L_val)
+            L = sp.Integer(int(L_val)) if float(L_val).is_integer() else sp.Float(L_val)
         elif isinstance(L_val, sp.Expr):
             try:
                 L_num = float(L_val.evalf())
-                if L_num <= 0:
-                    raise ValueError(f"El ancho del pozo 'L' debe ser un número real estrictamente positivo (L > 0); recibido: {L_num}")
-            except (TypeError, ValueError) as err:
-                if "estrictamente positivo" in str(err):
+                if L_num <= 0 or not np.isfinite(L_num):
+                    raise ScientificValidationError("error.well_width_positive", L=L_num)
+            except Exception as err:
+                if isinstance(err, ScientificValidationError):
                     raise
-                L_num = 1.0
+                raise ScientificValidationError("error.well_width_invalid", L=str(L_val))
             L = L_val
         else:
             try:
                 L_num = float(L_val)
-                if L_num <= 0:
-                    raise ValueError(f"El ancho del pozo 'L' debe ser un número real estrictamente positivo (L > 0); recibido: {L_val}")
+                if L_num <= 0 or not np.isfinite(L_num):
+                    raise ScientificValidationError("error.well_width_positive", L=L_val)
                 L = sp.sympify(L_val)
             except Exception as err:
-                if "estrictamente positivo" in str(err):
+                if isinstance(err, ScientificValidationError):
                     raise
                 L = SafeASTParser.L
                 L_num = 1.0
+
+        # DEF-07: Propagate L to integration bounds a and b
+        a_sub = sp.simplify(a.subs(SafeASTParser.L, L))
+        b_sub = sp.simplify(b.subs(SafeASTParser.L, L))
     else:
         L = SafeASTParser.L
         L_num = 1.0
+        a_sub = a
+        b_sub = b
 
     # QL-009: Check a <= b with respect to L_num
     try:
-        a_f = float(a.subs(SafeASTParser.L, L_num).subs(L, L_num).evalf())
-        b_f = float(b.subs(SafeASTParser.L, L_num).subs(L, L_num).evalf())
+        a_f = float(a_sub.subs(SafeASTParser.L, L_num).subs(L, L_num).evalf())
+        b_f = float(b_sub.subs(SafeASTParser.L, L_num).subs(L, L_num).evalf())
         if a_f > b_f:
-            raise ValueError(f"Límite inferior a={a} es estrictamente mayor que el límite superior b={b} (a > b produce probabilidades inválidas).")
-    except ValueError:
+            raise ScientificValidationError("error.well_inverted_limits", a=a, b=b)
+    except ScientificValidationError:
         raise
     except Exception:
         a_f, b_f = 0.0, L_num
 
     # QL-008: Physical domain is strictly [0, L] where density is (2/L)*sin^2(n*pi*x/L), and 0 outside.
-    # Restrict integration to intersection [max(0, a), min(L, b)]
     eff_a = max(0.0, a_f)
     eff_b = min(L_num, b_f)
 
@@ -410,14 +417,13 @@ def analizar_pozo_infinito(a: sp.Expr, b: sp.Expr, n_val: int = 1, L_val: sp.Exp
         (0, True)
     )
 
-    # Symbolic integral over [a, b] respecting physical domain [0, L]
-    prob_simbolica = sp.integrate(densidad_caja, (x, a, b))
+    # DEF-07: Symbolic integral over [a_sub, b_sub] respecting identical physical domain [0, L]
+    prob_simbolica = sp.integrate(densidad_caja, (x, a_sub, b_sub))
 
     # Calculate exact clamped numerical probability
     if eff_a >= eff_b:
         prob_numerica = 0.0
     else:
-        # Analytic integral of (2/L)*sin^2(n*pi*x/L): (x/L) - sin(2*n*pi*x/L)/(2*n*pi)
         def int_sin2_box(u):
             return (u / L_num) - np.sin(2.0 * n_val * np.pi * u / L_num) / (2.0 * n_val * np.pi)
 
@@ -445,11 +451,11 @@ def analizar_oscilador_armonico(n_val: int = 0) -> HarmonicOscillatorResult:
 
     if isinstance(n_val, float):
         if not n_val.is_integer():
-            raise ValueError(f"El nivel cuántico 'n' del oscilador armónico no puede ser fraccionario ({n_val}). Ingrese un entero válido.")
+            raise ScientificValidationError("error.quantum_number_fractional", n=n_val)
         n_val = int(n_val)
 
     if not isinstance(n_val, int) or n_val < 0:
-        raise ValueError(f"El nivel cuántico 'n' del oscilador armónico debe ser un entero no negativo (n = 0, 1, 2...); recibido: {n_val}")
+        raise ScientificValidationError("error.quantum_number_integer_non_negative", n=n_val)
 
     # Dimensionless coordinate xi = sqrt(m*w/hbar) * x
     xi = sp.sqrt(m * w / hbar) * x
@@ -485,18 +491,18 @@ def analizar_oscilador_armonico(n_val: int = 0) -> HarmonicOscillatorResult:
 # =====================================================================
 def analizar_efecto_tunel(E_ev: float = 3.2, V0_ev: float = 5.0, ancho_nm: float = 0.5, masa_kg: float = M_ELECTRON_SI) -> TunnelingResult:
     # Validate finite real values
-    for val, name in [(E_ev, "Energía E"), (V0_ev, "Altura de barrera V0"), (ancho_nm, "Espesor a"), (masa_kg, "Masa m")]:
+    for val, name in [(E_ev, "E"), (V0_ev, "V0"), (ancho_nm, "a"), (masa_kg, "m")]:
         if not isinstance(val, (int, float)) or not np.isfinite(val):
-            raise ValueError(f"El parámetro '{name}' debe ser un valor numérico real finito.")
+            raise ScientificValidationError("error.tunnel_param_finite", name=name)
 
     if E_ev < 0:
-        raise ValueError(f"La energía de la partícula E={E_ev} eV no puede ser negativa.")
+        raise ScientificValidationError("error.tunnel_param_positive", name="E", val=E_ev)
     if V0_ev <= 0:
-        raise ValueError(f"La altura de la barrera V0={V0_ev} eV debe ser estrictamente positiva.")
+        raise ScientificValidationError("error.tunnel_param_positive", name="V0", val=V0_ev)
     if ancho_nm < 0:
-        raise ValueError(f"El ancho de la barrera a={ancho_nm} nm no puede ser negativo.")
+        raise ScientificValidationError("error.tunnel_param_positive", name="a", val=ancho_nm)
     if masa_kg <= 0:
-        raise ValueError(f"La masa de la partícula m={masa_kg} kg debe ser estrictamente positiva.")
+        raise ScientificValidationError("error.tunnel_param_positive", name="m", val=masa_kg)
 
     ancho_m = ancho_nm * NM_TO_M
 
@@ -525,10 +531,7 @@ def analizar_efecto_tunel(E_ev: float = 3.2, V0_ev: float = 5.0, ancho_nm: float
         kappa = np.sqrt(2 * masa_kg * diff_j) / HBAR_SI
         kappa_a = kappa * ancho_m
 
-        # Stable numerical evaluation for thick barriers
         if kappa_a > 30.0:
-            # Asymptotic limit: sinh(ka) ~ 0.5 * exp(ka)
-            # T ~ 16 * E * (V0 - E) / (V0^2) * exp(-2*kappa*a)
             log_prefactor = np.log(16.0 * E_ev * (V0_ev - E_ev) / (V0_ev**2))
             log_T = log_prefactor - 2.0 * kappa_a
             T = float(np.exp(log_T)) if log_T > -700 else 0.0
@@ -538,7 +541,6 @@ def analizar_efecto_tunel(E_ev: float = 3.2, V0_ev: float = 5.0, ancho_nm: float
             T = float(1.0 / denom)
 
         regimen = f"Túnel Cuántico (E < V₀: {E_ev:.3f} eV < {V0_ev:.3f} eV)"
-        # QL-031: Accurate wave function explanation
         explicacion = (
             f"En física clásica la partícula rebotaría con certeza (E < V₀). En mecánica cuántica, la función de onda "
             f"dentro de la barrera finita es una combinación lineal de ondas evanescentes e^(-κx) y reflexiones internas e^(κx), "
@@ -590,7 +592,7 @@ def _expm_numpy(A: np.ndarray) -> np.ndarray:
     Completely eliminates dependency on SciPy.
     """
     if A.ndim != 2 or A.shape[0] != A.shape[1]:
-        raise ValueError("La matriz debe ser cuadrada para calcular la exponencial matricial.")
+        raise ScientificValidationError("error.matrix_not_square", rows=A.shape[0], cols=A.shape[1] if A.ndim > 1 else 1)
 
     norm_inf = float(np.max(np.sum(np.abs(A), axis=1)))
     if norm_inf == 0.0:
@@ -614,7 +616,7 @@ def _expm_numpy(A: np.ndarray) -> np.ndarray:
 
 
 # =====================================================================
-# 6. HAMILTONIANO MATRICIAL Y EVOLUCIÓN TEMPORAL (QL-003, QL-013, QL-014, QL-015, QL-023, QL-032)
+# 6. HAMILTONIANO MATRICIAL Y EVOLUCIÓN TEMPORAL (QL-003, QL-013, QL-014, QL-015, QL-023, QL-032, DEF-05, DEF-06)
 # =====================================================================
 def analizar_hamiltoniano_matricial(
     H: np.ndarray,
@@ -622,7 +624,7 @@ def analizar_hamiltoniano_matricial(
     t_val: Optional[float] = None
 ) -> HamiltonianResult:
     if H.ndim != 2 or H.shape[0] != H.shape[1]:
-        raise ValueError(f"La matriz debe ser bidimensional cuadrada, recibida forma {H.shape}")
+        raise ScientificValidationError("error.matrix_not_square", rows=H.shape[0], cols=H.shape[1] if H.ndim > 1 else 1)
 
     N = H.shape[0]
 
@@ -632,23 +634,19 @@ def analizar_hamiltoniano_matricial(
     es_hermitica = (residual_hermitico <= 1e-12)
 
     if es_hermitica:
-        # Strictly Hermitian (or within floating-point tolerance 1e-12)
         H_calc = 0.5 * (H + H_dagger) if residual_hermitico > 0 else H
         energias, autovectores = np.linalg.eigh(H_calc)
 
-        # Sort ascending
         sort_idx = np.argsort(energias)
         energias = energias[sort_idx]
         autovectores = autovectores[:, sort_idx]
 
-        # Calculate eigenvector residuals ||H v_j - lambda_j v_j|| against ORIGINAL H
         residuos = [
             float(np.linalg.norm(H @ autovectores[:, j] - energias[j] * autovectores[:, j]))
             for j in range(len(energias))
         ]
         max_residuo_autovector = float(np.max(residuos)) if residuos else 0.0
 
-        # QL-014: Gap to first DISTINCT eigenvalue
         e0 = energias[0]
         brecha = None
         es_degenerado = False
@@ -659,13 +657,10 @@ def analizar_hamiltoniano_matricial(
                 break
 
         if brecha is None:
-            # All eigenvalues are degenerate
             brecha = 0.0
             es_degenerado = True
     else:
-        # Non-Hermitian: keep full complex eigenvalues (QL-003)
         energias, autovectores = np.linalg.eig(H)
-        # Sort by real part for display, but keep complex
         sort_idx = np.argsort(energias.real)
         energias = energias[sort_idx]
         autovectores = autovectores[:, sort_idx]
@@ -678,34 +673,37 @@ def analizar_hamiltoniano_matricial(
         ]
         max_residuo_autovector = float(np.max(residuos)) if residuos else 0.0
 
-    # QL-015: Time evolution |psi(t)> = exp(-i H t / hbar) |psi(0)>
+    # QL-015 / DEF-06: Time evolution |psi(t)> = exp(-i H t / hbar) |psi(0)>
     psi_t = None
     norma_psi_t = None
+    psi_0_norm = None
+    norma_psi_0 = None
 
     if psi_0 is not None:
         if len(psi_0) != N:
-            raise ValueError(f"Dimensión de |ψ(0)⟩ ({len(psi_0)}) no coincide con dimensión del Hamiltoniano ({N}).")
+            raise ScientificValidationError(
+                "error.state_vector_dimension_mismatch",
+                vec_len=len(psi_0),
+                mat_dim=N
+            )
 
-        # Normalize initial state
-        norm0 = np.linalg.norm(psi_0)
+        # DEF-06: Keep raw entered vector and normalize for evolution
+        norm0 = float(np.linalg.norm(psi_0))
+        norma_psi_0 = norm0
         if norm0 > 1e-15:
             psi_0_norm = psi_0 / norm0
         else:
-            raise ValueError("El vector de estado inicial no puede tener norma cero.")
+            raise ScientificValidationError("error.state_vector_null")
 
         t = t_val if t_val is not None else 0.0
 
         if es_hermitica:
-            # Project onto orthonormal eigenbasis: psi(0) = sum_j c_j |E_j>
-            # c_j = <E_j | psi(0)>
             c = autovectores.conj().T @ psi_0_norm
-            # psi(t) = sum_j c_j * exp(-i * E_j * t / hbar) |E_j>
-            phases = np.exp(-1j * energias * t)  # natural units or t in hbar units
+            phases = np.exp(-1j * energias * t)  # natural units hbar = 1
             c_t = c * phases
             psi_t = autovectores @ c_t
             norma_psi_t = float(np.linalg.norm(psi_t))
         else:
-            # Matrix exponential in pure NumPy
             U = _expm_numpy(-1j * H * t)
             psi_t = U @ psi_0_norm
             norma_psi_t = float(np.linalg.norm(psi_t))
@@ -722,7 +720,9 @@ def analizar_hamiltoniano_matricial(
         evolucion_t=t_val,
         psi_0=psi_0,
         psi_t=psi_t,
-        norma_psi_t=norma_psi_t
+        norma_psi_t=norma_psi_t,
+        psi_0_norm=psi_0_norm,
+        norma_psi_0=norma_psi_0,
     )
 
 

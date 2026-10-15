@@ -420,7 +420,7 @@ STRINGS_ES = {
     "hamiltonian.gap_info": (
         "  Estado fundamental E₀ = {E0:.6f}\n"
         "  Brecha cuántica al primer nivel excitado distinto: ΔE = {gap:.6f}\n"
-        "  Frecuencia de Bohr asociada: ω = ΔE / ℏ = {freq:.6e} rad/s"
+        "  Frecuencia de Bohr asociada: ω = ΔE / ℏ = {freq:.6f} rad / u.t. (unidades naturales ℏ = 1)"
     ),
     "hamiltonian.gap_degenerate_note": "  (Se detectó degeneración en el nivel fundamental; el gap se midió al siguiente nivel distinto).",
     "hamiltonian.gap_degenerate_spectrum": "0.0000 (Espectro completamente degenerado; no hay nivel excitado superior distinto).",
@@ -442,37 +442,72 @@ STRINGS_ES = {
         "  Estado evolucionado: |ψ(t)⟩ = [ {psi_t} ]ᵀ  (Norma = {norm_t:.6f})\n"
         "  Evolución no unitaria (disipación / ganancia cuántica): La norma varía debido a la no-hermiticidad de H."
     ),
+    "hamiltonian.evolution_unitary_renorm": (
+        "  Tiempo transcurrido: t = {t} (en unidades ℏ = 1)\n"
+        "  Vector ingresado:   |ψ_raw(0)⟩ = [ {psi_0_raw} ]ᵀ  (Norma = {norm_0:.6f})\n"
+        "  Estado normalizado: |ψ(0)⟩     = [ {psi_0_norm} ]ᵀ  (Norma = 1.000000)\n"
+        "  Estado evolucionado:|ψ(t)⟩     = [ {psi_t} ]ᵀ  (Norma = {norm_t:.6f})\n"
+        "  Conservación unitaria: La norma del estado normalizado se conserva estrictamente."
+    ),
+    "hamiltonian.evolution_non_unitary_renorm": (
+        "  Tiempo transcurrido: t = {t} (en unidades ℏ = 1)\n"
+        "  Vector ingresado:   |ψ_raw(0)⟩ = [ {psi_0_raw} ]ᵀ  (Norma = {norm_0:.6f})\n"
+        "  Estado normalizado: |ψ(0)⟩     = [ {psi_0_norm} ]ᵀ  (Norma = 1.000000)\n"
+        "  Estado evolucionado:|ψ(t)⟩     = [ {psi_t} ]ᵀ  (Norma = {norm_t:.6f})\n"
+        "  Evolución no unitaria (disipación / ganancia cuántica): La norma varía debido a la no-hermiticidad de H."
+    ),
 
     # -------------------------------------------------------------
     # Mensajes de Error Científicos y del Parser
     # -------------------------------------------------------------
     "error.empty_expression": "La expresión matemática no puede estar vacía.",
-    "error.input_too_long": "La expresión excede la longitud máxima permitida ({max_len} caracteres).",
-    "error.ast_too_deep": "La expresión es excesivamente compleja o anidada (profundidad > {max_depth}).",
-    "error.exponent_too_large": "El exponente numérico ({exp}) excede el límite seguro ({max_exp}).",
+    "error.input_too_long": "La longitud de la expresión ({length}) excede el límite permitido ({max_len} caracteres).",
+    "error.ast_too_deep": "La expresión es demasiado compleja o anidada (límite superado).",
+    "error.too_complex_nodes": "La expresión es demasiado compleja: contiene {count} nodos AST (límite: {max_nodes}).",
+    "error.exponent_too_large": "El exponente numérico ({exp}) excede el límite máximo permitido ({max_exp}).",
     "error.power_nested_too_deep": "Potencias anidadas excesivas detectadas en la expresión.",
+    "error.int_too_large": "Número entero excede el límite seguro de {max_digits} dígitos.",
     "error.forbidden_node": "Estructura sintáctica no permitida: {node}.",
     "error.forbidden_function": "Función matemática no permitida: '{func}'.",
     "error.forbidden_variable": "Variable o constante no permitida: '{name}'.",
+    "error.func_without_parens": "'{name}' es una función y debe invocarse con paréntesis, ej. {name}(x).",
+    "error.unsupported_unary": "Operador unario no soportado: {op}.",
+    "error.unsupported_binary": "Operador binario no soportado: {op}.",
+    "error.invalid_call": "Solo se permiten llamadas a funciones directas nombradas.",
+    "error.invalid_call_kwargs": "Argumentos por clave no permitidos en funciones matemáticas.",
     "error.unsafe_attribute": "Acceso a atributos no permitido.",
     "error.syntax_invalid": "Sintaxis matemática inválida: {detail}",
-    "error.null_state_rejected": "El estado cuántico no puede ser la función nula (ψ = 0). La norma sería cero.",
+    "error.null_state_rejected": "El estado cuántico no puede ser la función nula (ψ = 0). El vector cero nunca es un autoestado. La norma sería cero.",
     "error.norm_zero_or_negative": "La integral de densidad |ψ|² es nula o no positiva; la función no es normalizable.",
     "error.norm_divergent": "La integral de normalización diverge (∞) o no converge analíticamente en el dominio especificado. ψ ∉ L².",
     "error.asymptotic_divergence_neg_inf": "La función de onda diverge hacia infinito cuando x -> -oo; no es normalizable en L².",
     "error.asymptotic_divergence_pos_inf": "La función de onda diverge hacia infinito cuando x -> +oo; no es normalizable en L².",
-    "error.well_inverted_limits": "Límites invertidos en el pozo de potencial: se requiere a < b, pero se ingresó a={a} > b={b}.",
-    "error.quantum_number_integer_positive": "El número cuántico 'n' debe ser un entero positivo (n >= 1).",
+    "error.well_inverted_limits": "Límite inferior a={a} es estrictamente mayor que el límite superior b={b} (a > b produce probabilidades inválidas).",
+    "error.quantum_number_integer_positive": "El número cuántico 'n' debe ser un entero estrictamente positivo (n >= 1).",
     "error.quantum_number_integer_non_negative": "El número cuántico 'n' debe ser un entero no negativo (n >= 0).",
     "error.quantum_number_fractional": "El número cuántico 'n' no puede ser fraccionario. Ingrese un entero válido.",
     "error.well_width_positive": "El ancho del pozo 'L' debe ser un número real estrictamente positivo (L > 0).",
-    "error.tunnel_param_finite": "Los parámetros del efecto túnel (E, V0, a) deben ser números reales finitos.",
-    "error.tunnel_param_positive": "Los parámetros del efecto túnel deben ser no negativos (E >= 0, V0 >= 0, a >= 0).",
-    "error.matrix_not_square": "La matriz ingresada no es cuadrada ({rows} filas x {cols} columnas).",
-    "error.matrix_empty": "La matriz Hamiltoniana no puede estar vacía.",
+    "error.well_width_invalid": "El ancho del pozo 'L' es inválido o no finito.",
+    "error.tunnel_param_finite": "El parámetro '{name}' debe ser un valor numérico real finito.",
+    "error.tunnel_param_positive": "El parámetro '{name}' debe ser no negativo.",
+    "error.matrix_not_square": "La matriz debe ser cuadrada (N×N), pero tiene dimensiones {rows}×{cols}.",
+    "error.matrix_empty": "La entrada de matriz está vacía.",
+    "error.matrix_no_rows": "No se encontraron filas válidas en la matriz.",
+    "error.matrix_empty_row": "La fila {row} de la matriz está vacía.",
+    "error.matrix_ragged_rows": "Fila irregular: la fila {row} tiene {len} elementos, pero la fila 1 tiene {expected}.",
+    "error.matrix_non_finite": "Elemento de matriz no finito detectado: '{val}'.",
+    "error.matrix_invalid_val": "Valor numérico no válido en la matriz: '{val}'.",
+    "error.matrix_max_dim": "Dimensión de matriz ({rows}×{cols}) excede el límite permitido ({max_dim}×{max_dim}).",
     "error.matrix_invalid_format": "Formato de matriz inválido. Ingrese filas separadas por ';' y elementos por ','.",
+    "error.state_vector_empty": "El vector de estado inicial está vacío.",
+    "error.state_vector_invalid_component": "Componente vectorial no válida: '{token}'.",
+    "error.state_vector_non_finite": "Componente vectorial no finita: '{token}'.",
+    "error.state_vector_no_components": "No se pudieron extraer componentes numéricas del vector de estado.",
     "error.state_vector_dimension_mismatch": "Dimensión del vector de estado ({vec_len}) no coincide con la dimensión del Hamiltoniano ({mat_dim}).",
+    "error.state_vector_null": "El vector de estado no puede ser el vector nulo (norma cero).",
     "error.state_vector_invalid": "Vector de estado inicial inválido: {detail}",
     "error.time_invalid": "Valor de tiempo 't' inválido: {detail}",
     "error.time_must_be_finite": "El tiempo 't' debe ser un número real finito.",
+    "error.calc_timeout": "El cálculo simbólico ha excedido el tiempo límite de seguridad ({timeout} s).",
+    "error.calc_cancelled": "El cálculo ha sido cancelado por el usuario.",
 }
