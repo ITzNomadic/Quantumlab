@@ -1,3 +1,6 @@
+from __future__ import annotations
+from typing import Any, Optional, List, Dict
+
 try:
     import _pylong
 except ImportError:
