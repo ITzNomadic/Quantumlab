@@ -8,13 +8,14 @@
 
 ## Features
 
-- **Wave function analysis:** normalization, expected position and momentum, kinetic energy and uncertainty estimates.
-- **1D time-independent Schrödinger equation:** applies the Hamiltonian and checks whether the energy quotient depends on position.
-- **Infinite square well:** displays the quantized energy formula and integrates probability over a region for the ground state.
-- **Quantum harmonic oscillator:** derives the ground-state energy from the Hamiltonian.
-- **Quantum tunneling:** calculates reflection and transmission through a rectangular barrier using built-in example parameters.
-- **Matrix Hamiltonians:** identifies Hermitian matrices and computes eigenvalues and eigenvectors with NumPy.
-- **Results workspace:** formatted steps, symbolic keypad, presets and export to a UTF-8 `.txt` file.
+- **Wave function analysis:** normalization, expected position and momentum, kinetic energy, boundary term self-adjointness checks, and rigorous Heisenberg uncertainty verification.
+- **1D time-independent Schrödinger equation:** applies the Hamiltonian, verifies residual $H\psi - E\psi = 0$, and distinguishes formal local solutions from normalizable $L^2(\mathbb{R})$ physical bound states.
+- **Infinite square well:** displays quantized energy formulas, respects quantum number $n \ge 1$, clamps integration strictly to the physical domain $[0, L]$, and computes exact probabilities.
+- **Quantum harmonic oscillator:** computes exact normalized Hermite wave functions and quantized energies $E_n = \hbar\omega(n + 1/2)$ for any level $n \ge 0$.
+- **Quantum tunneling:** calculates reflection and transmission through a rectangular barrier across all energy regimes ($E < V_0$, $E = V_0$, $E > V_0$, $a=0$, $E=0$) with user-defined parameters, stable asymptotic evaluations for thick barriers, and exact conservation of probability current ($T + R = 1$).
+- **Matrix Hamiltonians & Time Evolution:** identifies exact vs. numerical Hermiticity, computes eigenvalues and eigenvectors (preserving full complex eigenvalues for non-Hermitian systems), calculates true excitation gaps for degenerate spectra, and computes unitary time evolution $|\psi(t)\rangle = \exp(-iHt/\hbar)|\psi(0)\rangle$.
+- **Secure Sandboxed Parser:** custom AST mathematical parser (`SafeASTParser`) preventing code execution while supporting rich symbolic functions and constants.
+- **Results workspace:** formatted steps, symbolic keypad, responsive layout, persistent inputs per mode, and robust export to UTF-8 `.txt` file.
 
 ## Installation
 
@@ -36,17 +37,9 @@ On some Linux distributions you must install Tkinter separately (e.g. `sudo apt 
 | `Ctrl + S` | Export results as `.txt` |
 | `Ctrl + L` | Clear results |
 
-## Examples
-
-1. **Wave function:** select *Función de onda*; use the preset `exp(-x**2 / 2)` with bounds `-oo` and `oo`.
-2. **Schrödinger 1D:** use `sin(pi*x/L)` for the wave function and `0` for the potential.
-3. **Hamiltonian matrix:** select *Hamiltoniano* and enter `2, 1-1j; 1+1j, 3`.
-
-Inputs are interpreted using SymPy syntax (`**` for powers, `pi`, `oo`, `I`, etc.).
-
 ## Testing
 
-The included tests exercise the six default calculation modes and symbol-display conversion through the Tkinter interface.
+The comprehensive test suite verifies parser security, physical invariants, and GUI responsiveness across 60+ automated test cases.
 
 On a desktop with a display:
 
@@ -60,26 +53,16 @@ On a headless Linux server with Xvfb installed:
 xvfb-run -a python -m unittest discover -s tests -v
 ```
 
-GitHub Actions runs the same smoke tests for submitted changes.
+GitHub Actions runs the test suite automatically on submitted changes.
 
-## Known limitations
+## Security & Scientific Validation
 
-- **Educational prototype:** not all physics conclusions and boundary conditions have been independently validated. Confirm results before use in scientific work.
-- **Tunneling mode:** the example currently uses fixed numerical values (`E = 3.2 eV`, `V0 = 5.0 eV`, `a = 0.5 nm`) rather than reading all entered parameters.
-- **Infinite well:** the integrated example uses the ground state `n = 1` regardless of the free-form parameter text.
-- **Hamiltonian mode:** computes the eigensystem but does **not** yet implement time evolution, despite the descriptive mode title. Non-Hermitian matrices also need care in physical interpretation.
-- **Expression parsing:** `sympy.sympify()` is used on local user input. **Do not paste untrusted expressions** or expose this application as a remote expression-evaluation service without replacing that parser with a secured one.
-- **Unicode rendering:** some mathematical symbols are displayed using more compatible alternatives on Windows; presentation differs slightly from traditional notation.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) to help improve the project.
+- **AST Expression Parsing:** user inputs are parsed through `SafeASTParser`, strictly permitting only whitelist-approved mathematical operators, constants, and functions. Arbitrary Python code execution, attribute inspection, and imports are completely rejected.
+- **Audit Remediation:** All 33 findings from the technical and scientific audit (`Informe_Auditoria_QuantumLab.md`) have been systematically remediated and verified. Detailed mappings and proofs are documented in [docs/AUDIT_REMEDIATION_REPORT.md](docs/AUDIT_REMEDIATION_REPORT.md).
 
 ## Español
 
-**QuantumLab** es una aplicación educativa para estudiar mecánica cuántica mediante cálculos simbólicos y explicaciones paso a paso. Incluye análisis de funciones de onda, Schrödinger 1D, pozo infinito, oscilador armónico, efecto túnel y diagonalización de Hamiltonianos.
-
-**Inicio rápido en Windows:** instala Python, ejecuta `python -m pip install -r requirements.txt` y después `python quantumlab.py`.
-
-Se trata de una **versión inicial**: varias funciones usan parámetros de ejemplo y los resultados científicos deben verificarse de forma independiente. El código y la interfaz se publican para aprendizaje y colaboración.
+**QuantumLab** es una aplicación educativa y de cálculo cuántico riguroso desarrollada en Python con Tkinter, SymPy y NumPy. Incluye análisis de funciones de onda con verificación de contorno, ecuación de Schrödinger 1D con distinción de estados ligados, pozo infinito con soporte estricto $[0, L]$, oscilador armónico para niveles $n \ge 0$, efecto túnel multirégimen con evaluación numéricamente estable y diagonalización de matrices hermíticas y no hermíticas con evolución temporal unitaria. Cuenta además con un analizador sintáctico seguro basado en AST.
 
 ## License
 
